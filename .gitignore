@@ -1,0 +1,34 @@
+# Large firmware / flash images
+*.img
+*.zip
+*.ofp
+*.bin
+*.payload
+
+# Secrets and local env
+.env
+.env.*
+*.key
+*.pem
+credentials*
+secrets/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Backup and download payloads (keep structure via .gitkeep only)
+backup_porsche/*
+!backup_porsche/.gitkeep
+downloads/*
+!downloads/.gitkeep
+
+# Build artifacts
+*.o
+*.ko
+out/
+dist/
