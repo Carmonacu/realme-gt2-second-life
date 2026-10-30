@@ -1,0 +1,44 @@
+# Example local.config for kali-nethunter-kernel-builder
+# Copy to: $KERNEL_DIR/local.config (kernel source root, next to builder clone)
+#
+# Docs: docs/phases/05-build-kernel-detailed.md
+
+# --- Target device ---
+DEVICE_CODENAME=porsche
+# Realme GT 2 (RMX3311 EU), SM8350, A/B slots — confirm paths in device tree
+
+# --- Architecture ---
+ARCH=arm64
+
+# --- Defconfig (PLACEHOLDER — set after cloning kernel + matching ROM branch) ---
+# Examples (verify in your tree): vendor/porsche_defconfig, lahaina_porsche_defconfig
+DEFCONFIG=REPLACE_WITH_PORSCHE_DEFCONFIG
+
+# --- Kernel image output (PLACEHOLDER — tree-dependent) ---
+# Common on 5.4 GKI/vendor merges: Image, Image.gz, or Image.gz-dtb
+IMAGE_NAME=Image
+
+# DTB packaging if builder expects it (uncomment/adjust if required)
+# DTBIMG=dtbo.img
+# DTBOIMG=true
+
+# --- Flash / AnyKernel (PLACEHOLDER — confirm via device tree & stock by-name) ---
+# Example pattern for Realme/Oplus A/B; DO NOT flash with wrong block.
+# boot_block=/dev/block/bootdevice/by-name/boot_a
+# slot_device=_a
+# (Menu 8 in build.sh also edits AnyKernel3 config.)
+
+# --- Paths (optional overrides) ---
+# KERNEL_DIR is usually inferred when local.config lives in kernel root.
+# CLANG_PATH=...
+# CROSS_COMPILE=aarch64-linux-android-
+
+# --- Build tuning (optional) ---
+# CCACHE=1
+# THREADS=$(nproc)
+
+# --- Notes ---
+# 1. Run ./build.sh → S (toolchains) → 2 (build) before NetHunter patches.
+# 2. Enable HID/OTG, then CONFIG_FEATURE_FRAME_INJECTION_SUPPORT, then Docker CONFIG_*.
+# 3. Enable CONFIG_IKCONFIG + CONFIG_IKCONFIG_PROC for /proc/config.gz checks.
+# 4. Package: build.sh → 8 (AnyKernel) → 6 (zip).

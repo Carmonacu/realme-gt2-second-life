@@ -2,6 +2,8 @@
 
 **Goal:** Compile sm8350 kernel for porsche with NetHunter features + AnyKernel zip.
 
+**Detailed walkthrough:** [05-build-kernel-detailed.md](05-build-kernel-detailed.md) · Docker `CONFIG_*`: [../docker-kernel-options.md](../docker-kernel-options.md)
+
 ## Checklist
 
 - [ ] WSL: run setup from `scripts/wsl/` when available; confirm ~40–60 GB disk.
