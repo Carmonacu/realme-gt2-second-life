@@ -1,13 +1,20 @@
 # WSL build environment
 
-Kernel builds for Phase 5 run in **WSL2** (Ubuntu 22.04+ recommended).
+Kernel builds for Phase 5 run in **WSL2** (Ubuntu 22.04+). Verified: **Ubuntu 24.04.3 LTS**, WSL version **2**.
 
-Setup scripts (`setup-build-env.sh`, `verify-wsl.sh`) and `docs/wsl-build-environment.md` are added by the **WSL preparation agent** in the same project.
+## Quick start
 
-Until then:
+From Ubuntu (WSL):
 
-1. `wsl --install` or install Ubuntu from Microsoft Store.
-2. Allocate **40–60 GB** free disk inside WSL.
-3. Install base packages: `build-essential`, `bc`, `bison`, `flex`, `libssl-dev`, `clang`, `lld`, `python3`, `git`, `ccache`, `zip`, `curl`, `wget`.
+```bash
+bash /mnt/c/Users/carmo/Desktop/Proyects/nethunter-realme-gt2-porsche/scripts/wsl/verify-wsl.sh
+bash /mnt/c/Users/carmo/Desktop/Proyects/nethunter-realme-gt2-porsche/scripts/wsl/setup-build-env.sh
+```
 
-See [docs/phases/05-build-kernel.md](../../docs/phases/05-build-kernel.md).
+Dry run: `setup-build-env.sh --dry-run`
+
+Full notes: [docs/wsl-build-environment.md](../../docs/wsl-build-environment.md)
+
+Suggested kernel tree path: `~/android/kernel/sm8350` (see `clone-kernel-tree.sh`).
+
+See also [docs/phases/05-build-kernel.md](../../docs/phases/05-build-kernel.md) and [05-build-kernel-detailed.md](../../docs/phases/05-build-kernel-detailed.md).
