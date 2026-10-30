@@ -23,7 +23,7 @@ There is **no official NetHunter device entry** for porsche yet; this repo track
   - [02 – Bootloader unlock](docs/phases/02-bootloader-unlock.md)
   - [03 – Root & recovery point](docs/phases/03-recovery-point.md)
   - [04 – Custom ROM](docs/phases/04-custom-rom.md)
-  - [05 – Build NetHunter kernel](docs/phases/05-build-kernel.md)
+  - [05 – Build NetHunter kernel](docs/phases/05-build-kernel.md) — [detailed WSL flow](docs/phases/05-build-kernel-detailed.md), [Docker `CONFIG_*`](docs/docker-kernel-options.md)
   - [06 – Install & test](docs/phases/06-install-test.md)
   - [07 – Fallback](docs/phases/07-fallback.md)
   - [08 – Local AI](docs/phases/08-ai-local.md)
@@ -53,7 +53,7 @@ There is **no official NetHunter device entry** for porsche yet; this repo track
 .\scripts\windows\list-fastboot-devices.ps1
 ```
 
-Prepare WSL2 for kernel builds — see [scripts/wsl/README.md](scripts/wsl/README.md).
+Prepare WSL2 for kernel builds — [scripts/wsl/README.md](scripts/wsl/README.md) and [docs/wsl-build-environment.md](docs/wsl-build-environment.md) (run `setup-build-env.sh` in an interactive Ubuntu shell; needs `sudo`).
 
 ## References
 
