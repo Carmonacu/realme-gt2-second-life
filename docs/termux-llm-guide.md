@@ -135,9 +135,42 @@ Alternativas: proxy tipo [llama-swap](https://github.com/mostlygeek/llama-swap) 
 
 **Ojo con el router:** la API **exige** el campo `"model"` (la UI web tiene selector). Con `--models-max 1`, pedir otro modelo descarga el anterior (recarga ~10–15 s). En presets fijamos `ctx-size` (sin él, `--fit` elegiría el contexto máximo y en CPU la RAM se considera ilimitada). `thermal-guard` puede forzar menos hilos con `~/.cache/llm/threads-override`.
 
-**Pantalla encendida (brillo mínimo) para usar el LLM:** con la pantalla apagada ColorOS limita `cpu4` a 1,44 GHz y Qwen2.5-3B cae de ~8 a ~2,8 tok/s.
+**Pantalla encendida para usar el LLM** — ver [Pantalla y rendimiento](#pantalla-y-rendimiento): `mode llm` la enciende sola con `gt2-screen`.
 
 **Benchmark en el teléfono** (baseline vs KV q8_0 vs especulativa): [`scripts/bench/run-llm-variants.sh`](../scripts/bench/run-llm-variants.sh) — ver [benchmarks/rmx3311-llm.md](benchmarks/rmx3311-llm.md#variantes-router--kv-q8_0--especulativa-b12017).
+
+## Pantalla y rendimiento
+
+**Con la pantalla apagada el LLM no es usable.** ColorOS limita los núcleos medios (`cpu4`, `scaling_max_freq`) a **1,44 GHz** en cuanto la pantalla se apaga o entra en *Dozing* (AOD): Qwen2.5-3B baja a **~2,8 tok/s** y una respuesta de 120 tokens con qwen3b **no terminó en 4 min**. Con la pantalla encendida: **~8–12 tok/s** (qwen3b ~11,8 en router; 8,1 / 7,4 medido 2026-11-03 17:51 CET justo tras despertarla con `gt2-screen on`, `cpu4` a 2,11 GHz, en pantalla de bloqueo). **No sirve** `cmd power set-fixed-performance-mode-enabled true` (probado vía ADB: sigue el límite de 1,44 GHz).
+
+Lo que sí funciona:
+
+1. **«Permanecer activo» mientras carga** (Opciones de desarrollador; `settings get global stay_on_while_plugged_in` = **15**, AC/USB/inalámbrica/dock): enchufado, la pantalla no se apaga sola. Pon el **brillo al mínimo**. Si se apaga (botón de encendido, desenchufado), hay que despertarla:
+2. **`gt2-screen`** (self-ADB: el `adb` de Termux conectado al propio teléfono por *Depuración inalámbrica*):
+
+   ```bash
+   gt2-screen status     # pantalla: Awake|Dozing|Asleep · permanecer activo: 15 · ADB: 127.0.0.1:<puerto>
+   gt2-screen on         # KEYCODE_WAKEUP (queda en la pantalla de bloqueo: basta para quitar el límite)
+   gt2-screen off        # KEYCODE_SLEEP
+   gt2-screen keep-on    # stay_on_while_plugged_in=15 + on
+   gt2-screen connect    # solo (re)conectar ADB y cachear el puerto
+   ```
+
+   `mode llm` ejecuta `gt2-screen on` antes de arrancar el servidor (`SCREEN_CONTROL=1`, defecto); si falla solo avisa, el cambio de modo sigue. `SCREEN_OFF_ON_EXIT=1` hace que `mode media|idle|light-stack` la apaguen (defecto 0: con «Permanecer activo» volvería a quedarse encendida). `mode status` muestra la línea `pantalla:` (solo con el puerto cacheado, sin escanear).
+
+**Configurar self-ADB (una vez):**
+
+```bash
+pkg install android-tools             # adb 1.0.41 (sin mDNS); bootstrap.sh ya lo instala
+# Ajustes > Opciones de desarrollador > Depuración inalámbrica (ON, con Wi-Fi) >
+#   «Vincular dispositivo con código de vinculación» → puerto de vinculación + código de 6 cifras
+adb pair 127.0.0.1:<puerto-vinculación> <código>
+gt2-screen connect                    # busca el puerto de conexión y lo cachea en ~/.cache/gt2/adb-port
+```
+
+- **El emparejamiento persiste**; lo que cambia tras reiniciar o al desactivar/activar la depuración inalámbrica es el **puerto de conexión** (el que aparece como «Dirección IP y puerto»). Como el adb de Termux no tiene mDNS, `gt2-screen` prueba el puerto cacheado y, si falla, **escanea 127.0.0.1:30000–50000** (`nmap` si está instalado; si no, `/dev/tcp` de bash en paralelo, ~14 s en el SD888) y hace `adb connect` a cada puerto abierto hasta que uno queda en `device`. `/proc/net/tcp` no es legible en Android (permiso denegado), por eso el escaneo.
+- **Android apaga la Depuración inalámbrica** al reiniciar o cambiar de Wi-Fi: si `gt2-screen` dice «no hay conexión ADB», reactívala en Ajustes (no hace falta volver a vincular).
+- **`adb tcpip 5555` (puerto fijo): no se usa.** Reinicia `adbd` en modo TCP clásico, que corta la sesión de depuración inalámbrica y no está claro que acepte la clave emparejada sin un diálogo en pantalla; si falla, el teléfono queda sin ADB hasta tocarlo a mano. No se probó en el RMX3311 por eso.
 
 ### Portal homepage (puerto 8081)
 

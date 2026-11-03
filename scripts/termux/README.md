@@ -23,7 +23,7 @@ Escucha en la **IP Tailscale** (`100.x`, interfaz `tun*`), no en toda la Wi‑Fi
 Tras `adb push` del repo a `/sdcard/Download/llm-setup/`:
 
 ```bash
-cp -f ~/storage/shared/Download/llm-setup/{llm,llm-common.sh,run-smol.sh,run-router.sh,run-qwen3b-spec.sh,ssh-setup.sh,kali,kali-common.sh,kali-update,kali-uninstall,mode,mode-lib.sh,portal-status.sh,power-lib.sh,charge-limiter,thermal-guard} ~/bin/
+cp -f ~/storage/shared/Download/llm-setup/{llm,llm-common.sh,run-smol.sh,run-router.sh,run-qwen3b-spec.sh,ssh-setup.sh,kali,kali-common.sh,kali-update,kali-uninstall,mode,mode-lib.sh,portal-status.sh,power-lib.sh,charge-limiter,thermal-guard,gt2-screen} ~/bin/
 chmod +x ~/bin/*
 ```
 
@@ -135,6 +135,16 @@ echo 'LLM_SERVER_MODE=single' >> ~/.llm.conf   # volver al comportamiento anteri
 ```
 
 API en router: el JSON **debe** llevar `"model": "smol"` (o `qwen3b`, `qwen3b-spec`, …). Guía: [`docs/termux-llm-guide.md`](../../docs/termux-llm-guide.md#router-kv-q8_0-especulativa-y-métricas-b12017). Benchmark: `bash run-llm-variants.sh` (copiar desde `scripts/bench/`).
+
+## 12b. Pantalla y rendimiento (`gt2-screen`)
+
+Con la pantalla apagada ColorOS limita `cpu4` a 1,44 GHz y el LLM cae a ~2,8 tok/s (encendida: ~8–12). `mode llm` la enciende con **`gt2-screen on`** (self-ADB vía Depuración inalámbrica; `SCREEN_CONTROL=1` en `~/.llm.conf`, defecto). Una vez: `pkg install android-tools`, Depuración inalámbrica ON, «Vincular con código» → `adb pair 127.0.0.1:<puerto> <código>`, `gt2-screen connect`.
+
+```bash
+gt2-screen status | on | off | keep-on | connect
+```
+
+El puerto de conexión cambia al reiniciar: se redescubre solo (escaneo 30000–50000, ~14 s) y se cachea en `~/.cache/gt2/adb-port`. Si dice «no hay conexión ADB»: reactiva la Depuración inalámbrica (el emparejamiento se conserva). Guía: [`docs/termux-llm-guide.md` § Pantalla y rendimiento](../../docs/termux-llm-guide.md#pantalla-y-rendimiento).
 
 ## 13. Batería: limitador de carga + guardián térmico (opt-in)
 

@@ -245,6 +245,56 @@ mode_start_llm_single() {
     </dev/null >>"${HOME}/llm-mode.log" 2>&1 9>&- &
 }
 
+# --- Pantalla (gt2-screen, self-ADB) ---
+# ColorOS limita cpu4 a 1,44 GHz con la pantalla apagada → LLM ~2,8 tok/s. SCREEN_CONTROL=1 (defecto):
+# `mode llm` enciende la pantalla. SCREEN_OFF_ON_EXIT=1: media/idle/light-stack la apagan (defecto 0:
+# con «Permanecer activo» se quedaría encendida igualmente). Nunca hace fallar el cambio de modo.
+mode_screen_cmd() {
+  local c="${HOME}/bin/gt2-screen"
+  [[ -x "$c" ]] || c="$(command -v gt2-screen 2>/dev/null)"
+  [[ -n "$c" && -x "$c" ]] && echo "$c"
+}
+
+mode_screen_on() {
+  [[ "$(mode_llm_conf_get SCREEN_CONTROL 1)" == "1" ]] || return 0
+  local c out
+  c="$(mode_screen_cmd)" || true
+  if [[ -z "$c" ]]; then
+    echo "Aviso: SCREEN_CONTROL=1 pero falta ~/bin/gt2-screen — pantalla sin tocar." >&2
+    return 0
+  fi
+  if out="$(timeout 60 "$c" on 2>&1 9>&-)"; then
+    echo "==> ${out##*$'\n'}"
+  else
+    echo "Aviso: no se pudo encender la pantalla (gt2-screen on). Con la pantalla apagada el LLM va" >&2
+    echo "  ~3× más lento (cpu4 a 1,44 GHz). Detalle: $(echo "$out" | grep -m1 . ) (gt2-screen connect)" >&2
+    mode_log_transition "$(mode_read_state)" llm "screen_on=failed" 2>/dev/null || true
+  fi
+  return 0
+}
+
+mode_screen_off_on_exit() {
+  [[ "$(mode_llm_conf_get SCREEN_CONTROL 1)" == "1" ]] || return 0
+  [[ "$(mode_llm_conf_get SCREEN_OFF_ON_EXIT 0)" == "1" ]] || return 0
+  local c out
+  c="$(mode_screen_cmd)" || true
+  [[ -n "$c" ]] || return 0
+  if out="$(timeout 60 "$c" off 2>&1 9>&-)"; then
+    echo "==> ${out##*$'\n'}"
+  else
+    echo "Aviso: no se pudo apagar la pantalla (gt2-screen off)." >&2
+  fi
+  return 0
+}
+
+mode_screen_status() {
+  local c
+  c="$(mode_screen_cmd)" || true
+  [[ -n "$c" ]] || return 0
+  # --no-scan: solo conexión/puerto cacheado (status debe ser rápido)
+  timeout 15 "$c" status --no-scan 2>/dev/null 9>&- || echo "pantalla: ? (sin ADB; gt2-screen connect)"
+}
+
 mode_llm_port() {
   mode_llm_conf_get LLM_PORT 8080
 }
@@ -357,11 +407,13 @@ mode_apply_unlocked() {
       mode_write_state idle
       mode_log_transition "$from" idle
       echo "Modo: idle (solo sshd/Tailscale + ligeros off)."
+      mode_screen_off_on_exit
       ;;
     llm)
       mode_stop_media_stack
       pgrep -f 'qemu-system-' >/dev/null 2>&1 && pkill -f 'qemu-system-' 2>/dev/null || true
       mode_sv_down llama-smol
+      mode_screen_on
       # mode_start_llm_background comprueba /health en el puerto configurado («ya activo»)
       mode_start_llm_background || return 1
       mode_write_state llm
@@ -391,6 +443,7 @@ mode_apply_unlocked() {
       mode_write_state media
       mode_log_transition "$from" media
       echo "Modo: media (Jellyfin; LLM off)."
+      mode_screen_off_on_exit
       ;;
     light-stack)
       mode_stop_llama || true
@@ -409,6 +462,7 @@ mode_apply_unlocked() {
       mode_write_state light-stack
       mode_log_transition "$from" light-stack
       echo "Modo: light-stack"
+      mode_screen_off_on_exit
       ;;
     lab)
       mode_stop_all_heavy
@@ -453,6 +507,7 @@ mode_show_status() {
     echo "llm: $(sed -n 's/^LLM_RUNTIME_SERVER_MODE=//p' "$rt") · modelo $(sed -n 's/^LLM_RUNTIME_MODEL=//p' "$rt") · KV $(sed -n 's/^LLM_RUNTIME_KV=//p' "$rt")"
   fi
   echo "térmica: $(mode_thermal_state)"
+  mode_screen_status
   if [[ -f "${POWER_CACHE_DIR}/battery.json" ]] && command -v jq >/dev/null 2>&1; then
     jq -r '"batería: \(.percentage)% · \(.temperature) °C · \(.plugged) (\(.status))"' \
       "${POWER_CACHE_DIR}/battery.json" 2>/dev/null || true

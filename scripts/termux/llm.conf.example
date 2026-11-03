@@ -1,5 +1,5 @@
 # ~/.llm.conf — opciones de llama-server (b12017) para llm / mode llm / servicio llama-smol
-# Solo líneas LLM_*=valor. Las variables de entorno tienen prioridad (p. ej. LLM_KV_TYPE=q8_0 llm qwen3b).
+# Líneas CLAVE=valor (LLM_*, SCREEN_*). Las variables de entorno tienen prioridad (p. ej. LLM_KV_TYPE=f16 llm qwen3b).
 
 # Servidor de «mode llm» y del servicio llama-smol:
 #   router = un endpoint :8080, todos los modelos como presets, carga bajo demanda (defecto)
@@ -28,3 +28,9 @@ LLM_SPEC_DRAFT_N_MAX=8
 LLM_SPEC_DRAFT_N_MIN=0
 LLM_SPEC_DRAFT_P_MIN=0.75
 #LLM_SPEC_THREADS_DRAFT=2
+
+# Pantalla (gt2-screen vía self-ADB; también lo leen `mode`): con la pantalla apagada ColorOS limita
+# cpu4 a 1,44 GHz y el LLM cae de ~11 a ~2,8 tok/s. Requiere android-tools + Depuración inalámbrica
+# emparejada (docs/termux-llm-guide.md § Pantalla y rendimiento). Si falla, solo avisa.
+SCREEN_CONTROL=1            # 1 = `mode llm` enciende la pantalla (gt2-screen on) · 0 = no tocarla
+SCREEN_OFF_ON_EXIT=0        # 1 = mode media/idle/light-stack la apagan (con «Permanecer activo» no hace falta)

@@ -16,5 +16,6 @@ scripts/termux/kali                 text eol=lf
 scripts/termux/kali-update          text eol=lf
 scripts/termux/kali-uninstall       text eol=lf
 scripts/termux/qbit-prune           text eol=lf
+scripts/termux/gt2-screen           text eol=lf
 scripts/termux/boot/start-services  text eol=lf
 scripts/termux/services/*/run       text eol=lf

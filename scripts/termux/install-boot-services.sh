@@ -116,7 +116,7 @@ install_bin() {
 src_dir="$SETUP_DIR"
 [[ -f "${SETUP_DIR}/termux/llm-common.sh" ]] && src_dir="${SETUP_DIR}/termux"
 installed=()
-for mf in llm llm-common.sh mode mode-lib.sh portal-status.sh power-lib.sh charge-limiter thermal-guard; do
+for mf in llm llm-common.sh mode mode-lib.sh portal-status.sh power-lib.sh charge-limiter thermal-guard gt2-screen; do
   msrc="${SETUP_DIR}/${mf}"
   [[ -f "${SETUP_DIR}/termux/${mf}" ]] && msrc="${SETUP_DIR}/termux/${mf}"
   if [[ -f "$msrc" ]]; then

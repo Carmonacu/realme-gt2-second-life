@@ -1,0 +1,189 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# gt2-screen — controla la pantalla del propio teléfono vía ADB inalámbrico (self-ADB desde Termux).
+# ColorOS limita los núcleos medios (cpu4 → 1,44 GHz) con la pantalla apagada y el LLM cae a ~2,8 tok/s;
+# con la pantalla encendida (brillo mínimo vale) ~8–12 tok/s. `mode llm` llama a `gt2-screen on`.
+#
+# Uso: gt2-screen on|off|status|connect|keep-on [--no-scan]
+#   on        despierta la pantalla (KEYCODE_WAKEUP; queda en la pantalla de bloqueo)
+#   off       apaga la pantalla (KEYCODE_SLEEP)
+#   status    mWakefulness (Awake | Dozing | Asleep) + «Permanecer activo» + puerto ADB
+#   connect   solo asegura la conexión ADB (y cachea el puerto)
+#   keep-on   «Permanecer activo» mientras carga (stay_on_while_plugged_in=15) + on
+#   --no-scan no escanea puertos: solo usa la conexión/puerto cacheado (rápido; lo usa `mode status`)
+#
+# Requisitos (una vez): pkg install android-tools · Ajustes > Opciones de desarrollador >
+# Depuración inalámbrica > «Vincular con código» → adb pair 127.0.0.1:<puerto-vinculación> <código>.
+# El emparejamiento persiste; lo que cambia (reinicio / al reactivar la depuración) es el puerto de
+# conexión: se redescubre escaneando 127.0.0.1 (adb 1.0.41 de Termux no trae mDNS).
+# Códigos de salida: 0 ok · 1 uso · 2 falta adb · 3 sin conexión ADB · 4 la acción no surtió efecto
+set -uo pipefail
+
+GT2_CACHE_DIR="${GT2_CACHE_DIR:-${HOME}/.cache/gt2}"
+GT2_ADB_PORT_FILE="${GT2_ADB_PORT_FILE:-${GT2_CACHE_DIR}/adb-port}"
+GT2_ADB_HOST="${GT2_ADB_HOST:-127.0.0.1}"
+GT2_SCAN_MIN="${GT2_SCAN_MIN:-30000}"
+GT2_SCAN_MAX="${GT2_SCAN_MAX:-50000}"
+GT2_SCAN_WORKERS="${GT2_SCAN_WORKERS:-8}"
+GT2_CONNECT_TIMEOUT="${GT2_CONNECT_TIMEOUT:-4}"
+
+SERIAL=""
+
+die() { local rc="$1"; shift; echo "gt2-screen: $*" >&2; exit "$rc"; }
+
+usage() { sed -n '6,13p' "$0" | sed 's/^# \{0,1\}//'; }
+
+wireless_help() {
+  cat >&2 <<'EOT'
+gt2-screen: no hay conexión ADB con el propio teléfono.
+  ¿Está activada la Depuración inalámbrica? Ajustes > Opciones de desarrollador > Depuración
+  inalámbrica (necesita Wi-Fi conectada; Android la desactiva al cambiar de red o reiniciar).
+  El emparejamiento se conserva: solo cambia el puerto de conexión, que este script busca solo.
+  Si nunca se emparejó (o se borró): en esa pantalla «Vincular dispositivo con código de
+  vinculación» y en Termux:  adb pair 127.0.0.1:<puerto-vinculación> <código>
+  Prueba manual: adb connect 127.0.0.1:<puerto que muestra la pantalla>  &&  gt2-screen connect
+EOT
+}
+
+adb_state() { timeout 5 adb -s "$1" get-state 2>/dev/null | tr -d '\r'; }
+
+# Ya conectado (p. ej. por otro proceso): primer 127.0.0.1:* en estado «device»
+adb_existing() {
+  adb devices 2>/dev/null | tr -d '\r' | awk -v h="$GT2_ADB_HOST:" 'index($1,h)==1 && $2=="device" {print $1; exit}'
+}
+
+try_port() {
+  local s="${GT2_ADB_HOST}:$1"
+  [[ "$(adb_state "$s")" == "device" ]] && { SERIAL="$s"; return 0; }
+  timeout "$GT2_CONNECT_TIMEOUT" adb connect "$s" >/dev/null 2>&1 || true
+  local i
+  for i in 1 2 3; do
+    [[ "$(adb_state "$s")" == "device" ]] && { SERIAL="$s"; return 0; }
+    sleep 0.5
+  done
+  adb disconnect "$s" >/dev/null 2>&1 || true
+  return 1
+}
+
+save_port() { mkdir -p "$GT2_CACHE_DIR"; echo "${SERIAL##*:}" >"$GT2_ADB_PORT_FILE"; }
+
+scan_ports() {
+  if command -v nmap >/dev/null 2>&1; then
+    nmap -n -Pn -T5 --open -p "${GT2_SCAN_MIN}-${GT2_SCAN_MAX}" -oG - "$GT2_ADB_HOST" 2>/dev/null \
+      | grep -oE '[0-9]+/open' | cut -d/ -f1
+    return
+  fi
+  # Sin nmap: /dev/tcp de bash en paralelo (localhost rechaza al instante; ~5 s para 20 000 puertos)
+  local span=$(( (GT2_SCAN_MAX - GT2_SCAN_MIN + GT2_SCAN_WORKERS) / GT2_SCAN_WORKERS )) s
+  for ((s = GT2_SCAN_MIN; s <= GT2_SCAN_MAX; s += span)); do
+    (
+      e=$((s + span - 1)); ((e > GT2_SCAN_MAX)) && e=$GT2_SCAN_MAX
+      for ((p = s; p <= e; p++)); do
+        { : <>"/dev/tcp/${GT2_ADB_HOST}/${p}"; } 2>/dev/null && echo "$p"
+      done
+    ) &
+  done
+  wait
+}
+
+ensure_conn() {
+  local noscan="${1:-0}" port=""
+  command -v adb >/dev/null 2>&1 || die 2 "falta adb: pkg install android-tools"
+  adb start-server >/dev/null 2>&1 || true
+  if [[ -f "$GT2_ADB_PORT_FILE" ]]; then
+    port="$(tr -dc '0-9' <"$GT2_ADB_PORT_FILE")"
+    if [[ -n "$port" ]] && try_port "$port"; then return 0; fi
+    rm -f "$GT2_ADB_PORT_FILE"   # puerto caducado (reinicio / depuración reactivada)
+  fi
+  SERIAL="$(adb_existing)"
+  if [[ -n "$SERIAL" ]]; then save_port; return 0; fi
+  if [[ "$noscan" == "1" ]]; then return 3; fi
+
+  echo "gt2-screen: buscando el puerto de Depuración inalámbrica (${GT2_SCAN_MIN}-${GT2_SCAN_MAX})..." >&2
+  local cands=() p
+  mapfile -t cands < <(scan_ports | sort -n)
+  [[ "${#cands[@]}" -gt 0 ]] || { wireless_help; return 3; }
+  # adb connect en paralelo a todos los candidatos; el que quede en «device» es el bueno
+  for p in "${cands[@]}"; do
+    timeout "$GT2_CONNECT_TIMEOUT" adb connect "${GT2_ADB_HOST}:${p}" >/dev/null 2>&1 &
+  done
+  wait
+  sleep 1
+  local found="" st
+  for p in "${cands[@]}"; do
+    st="$(adb_state "${GT2_ADB_HOST}:${p}")"
+    if [[ -z "$found" && "$st" == "device" ]]; then
+      found="$p"
+    else
+      adb disconnect "${GT2_ADB_HOST}:${p}" >/dev/null 2>&1 || true
+    fi
+  done
+  if [[ -z "$found" ]]; then
+    wireless_help
+    return 3
+  fi
+  SERIAL="${GT2_ADB_HOST}:${found}"
+  save_port
+  echo "gt2-screen: conectado a ${SERIAL} (puerto cacheado en ${GT2_ADB_PORT_FILE})" >&2
+  return 0
+}
+
+ash() { timeout 15 adb -s "$SERIAL" shell "$@" 2>/dev/null | tr -d '\r'; }
+
+wakefulness() { ash dumpsys power | sed -n 's/.*mWakefulness=\([A-Za-z]*\).*/\1/p' | head -1; }
+
+wait_state() {   # wait_state <regex> → 0 si la pantalla llega a ese estado en ~3 s
+  local i w
+  for i in 1 2 3 4 5 6; do
+    w="$(wakefulness)"
+    [[ "$w" =~ $1 ]] && return 0
+    sleep 0.5
+  done
+  return 1
+}
+
+cmd="${1:-status}"
+noscan=0
+for a in "$@"; do [[ "$a" == "--no-scan" ]] && noscan=1; done
+
+case "$cmd" in
+  on|off|status|connect|keep-on) ;;
+  -h|--help|help) usage; exit 0 ;;
+  *) usage >&2; exit 1 ;;
+esac
+
+if ! ensure_conn "$noscan"; then
+  [[ "$noscan" == "1" ]] && echo "gt2-screen: sin conexión ADB (--no-scan: no se busca el puerto; prueba gt2-screen connect)" >&2
+  exit 3
+fi
+
+case "$cmd" in
+  connect)
+    echo "ADB: $SERIAL"
+    ;;
+  status)
+    echo "pantalla: $(wakefulness) · permanecer activo: $(ash settings get global stay_on_while_plugged_in) · ADB: $SERIAL"
+    ;;
+  on)
+    if [[ "$(wakefulness)" == "Awake" ]]; then echo "pantalla: Awake (ya encendida)"; exit 0; fi
+    ash input keyevent KEYCODE_WAKEUP >/dev/null
+    wait_state '^Awake$' || die 4 "KEYCODE_WAKEUP enviado pero la pantalla sigue «$(wakefulness)»"
+    echo "pantalla: Awake"
+    ;;
+  off)
+    if [[ "$(wakefulness)" != "Awake" ]]; then echo "pantalla: $(wakefulness) (ya apagada)"; exit 0; fi
+    ash input keyevent KEYCODE_SLEEP >/dev/null
+    wait_state '^(Asleep|Dozing)$' || die 4 "KEYCODE_SLEEP enviado pero la pantalla sigue «$(wakefulness)»"
+    echo "pantalla: $(wakefulness)"
+    ;;
+  keep-on)
+    # 15 = AC | USB | inalámbrica | dock: la pantalla no se apaga sola mientras carga
+    [[ "$(ash settings get global stay_on_while_plugged_in)" == "15" ]] \
+      || ash settings put global stay_on_while_plugged_in 15 >/dev/null
+    echo "permanecer activo mientras carga: $(ash settings get global stay_on_while_plugged_in)"
+    if [[ "$(wakefulness)" != "Awake" ]]; then
+      ash input keyevent KEYCODE_WAKEUP >/dev/null
+      wait_state '^Awake$' || die 4 "no se pudo encender la pantalla"
+    fi
+    echo "pantalla: Awake"
+    ;;
+esac

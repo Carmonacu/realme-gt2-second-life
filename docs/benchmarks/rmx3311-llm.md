@@ -153,6 +153,8 @@ Condiciones: binario empaquetado b12017 (`llama-server` single), `-t 4`, ctx 409
 
 Con la pantalla apagada / Termux en segundo plano, ColorOS limita `cpu4` (`scaling_max_freq`) a **1,44 GHz** (además había ~1,7 GB de swap y load ~8): Qwen2.5-3B cayó a **~2,8 tok/s** (f16 2,84 · q8_0 2,87 · spec 2,86 · SmolLM3 2,60). **Recomendación:** para usar el LLM, **pantalla encendida con brillo mínimo** (o Termux en primer plano); las cifras con pantalla apagada no sirven para comparar variantes.
 
+Más pruebas el mismo día: con la pantalla apagada / *Dozing*, qwen3b en router **no terminó 120 tokens en 4 min**; `cmd power set-fixed-performance-mode-enabled true` (vía ADB) **no quita** el límite de 1,44 GHz. Con la pantalla encendida: **~11,8 tok/s** (qwen3b, router). Tras despertarla con `gt2-screen on` (pantalla de bloqueo, `cpu4` máx. 2,11 GHz, 17:51 CET): qwen3b 8,10 / 7,36 tok/s, smol 7,77. «Permanecer activo» mientras carga (`stay_on_while_plugged_in=15`) evita que se apague sola. Ver [Pantalla y rendimiento](../termux-llm-guide.md#pantalla-y-rendimiento).
+
 ### Router (b12017 compilado en Termux, 2026-11-03)
 
 Binario propio `~/opt/llama-b12017` con `-DLLAMA_SUBPROCESS=ON` ([cómo](../termux-llm-guide.md#router-con-llamacpp-compilado-en-termux-probado-2026-11-03)), `mode llm` → router en :8080, `--models-max 1`, pantalla encendida, Jellyfin parado (MemAvailable ~3,9 GB antes de cargar). Petición `/v1/chat/completions` con 120 tokens (`ignore_eos`), temp 0; hilos según preset (smol 2, qwen3b 4). Prompt de ~75 tokens distinto al de la tabla anterior (más corto) → **no comparar el prompt tok/s** entre tablas.
