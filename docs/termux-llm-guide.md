@@ -78,14 +78,14 @@ Diseño completo: [`service-modes-design.md`](service-modes-design.md).
 
 ## Router, KV q8_0, especulativa y métricas (b12017)
 
-Flags verificados contra `tools/server/README.md` y el código del tag **b12017** (el mismo build que corre en el teléfono) y probados con el binario oficial `b12017` **x86_64** (no en el teléfono). Config opcional en **`~/.llm.conf`** (plantilla [`llm.conf.example`](../scripts/termux/llm.conf.example)); las variables de entorno mandan sobre el fichero.
+Flags verificados contra `tools/server/README.md` y el código del tag **b12017**. **Router probado en el teléfono 2026-11-03** con llama.cpp b12017 **compilado en Termux** con `-DLLAMA_SUBPROCESS=ON` (ver abajo); el binario empaquetado no lo soporta. Config opcional en **`~/.llm.conf`** (plantilla [`llm.conf.example`](../scripts/termux/llm.conf.example)); las variables de entorno mandan sobre el fichero.
 
 | Opción | Cómo | Qué hace |
 |--------|------|----------|
 | **Router** (defecto en `mode llm` y servicio `llama-smol`) | `llm router` · `LLM_SERVER_MODE=router` | `llama-server` sin `-m` + `--models-preset ~/.cache/llm/router-presets.ini` (generado con los GGUF presentes) + `--models-max 1` + `--sleep-idle-seconds 600`. Un endpoint :8080; el modelo se carga con la 1.ª petición y se descarga tras 10 min sin uso. |
-| Volver al modo anterior | `LLM_SERVER_MODE=single` en `~/.llm.conf` | `mode llm` / `llama-smol` = SmolLM3 fijo (`run-smol.sh`). Antes de arrancar el router se hace una sonda de capacidad (`llm router-check`, cacheada por binario en `~/.cache/llm/router-capability`, puerto de sonda `LLM_PROBE_PORT=18090`); si el build no soporta router, `mode llm`, `llm router` y el servicio `llama-smol` caen **al momento** a single con aviso. Si el router arranca pero no da `/health` en 30 s, `mode llm` también cae a single (y corta antes si el log muestra el error de subprocess). |
-| **KV cache q8_0** | `LLM_KV_TYPE=q8_0` (cualquier `llm …`, router y servicio) | `-ctk q8_0 -ctv q8_0 -fa on` (la V cuantizada **exige** flash-attn en b12017; con `-fa off` falla al crear contexto). ≈ mitad de RAM de KV → más contexto (p. ej. `LLM_KV_TYPE=q8_0 llm qwen3b 8192`). |
-| **Especulativa** | `llm qwen3b-spec` · preset router `qwen3b-spec` | Qwen2.5-3B + borrador Qwen2.5-0.5B: `--model-draft … --spec-type draft-simple --spec-draft-n-max 8 --spec-draft-p-min 0.75`. En b12017 **`--draft-max`/`--draft-min` ya no existen**. +~0,5 GiB RAM. Medida 2026-11-03: **sin ganancia** (2,86 vs 2,84 tok/s), pero con el teléfono limitado — [repetir](benchmarks/rmx3311-llm.md#variantes-router--kv-q8_0--especulativa-b12017). |
+| Volver al modo anterior | `LLM_SERVER_MODE=single` en `~/.llm.conf` | `mode llm` / `llama-smol` = SmolLM3 fijo (`run-smol.sh`). Antes de arrancar el router se hace una sonda de capacidad (`llm router-check`, cacheada por binario en `~/.cache/llm/router-capability`, puerto de sonda `LLM_PROBE_PORT=18099`; si está ocupado prueba los 9 siguientes, para no dar un falso «sí» con otro servidor escuchando); si el build no soporta router, `mode llm`, `llm router` y el servicio `llama-smol` caen **al momento** a single con aviso. Si el router arranca pero no da `/health` en 30 s, `mode llm` también cae a single (y corta antes si el log muestra el error de subprocess). |
+| **KV cache q8_0** (**defecto** desde 2026-11-03) | `LLM_KV_TYPE=q8_0` (defecto; `LLM_KV_TYPE=f16` para volver) | `-ctk q8_0 -ctv q8_0 -fa on` (la V cuantizada **exige** flash-attn en b12017; con `-fa off` falla al crear contexto). ≈ mitad de RAM de KV → más contexto (p. ej. `llm qwen3b 8192`). Coste medido: qwen3b 8,06 vs 8,27 tok/s (−2,5 %). |
+| **Especulativa** | `llm qwen3b-spec` · preset router `qwen3b-spec` | Qwen2.5-3B + borrador Qwen2.5-0.5B: `--model-draft … --spec-type draft-simple --spec-draft-n-max 8 --spec-draft-p-min 0.75`. En b12017 **`--draft-max`/`--draft-min` ya no existen**. +~0,5 GiB RAM. Medida 2026-11-03 con pantalla encendida: **sin ganancia** (7,95 vs 8,06 tok/s con KV q8_0) → **no es el defecto**; el preset se mantiene solo para pruebas ([detalle](benchmarks/rmx3311-llm.md#variantes-router--kv-q8_0--especulativa-b12017)). |
 | **Métricas** | `LLM_METRICS=1` (defecto) | `--metrics` → `GET /metrics` (Prometheus). En router: `/metrics?model=smol`. El portal muestra tok/s medio, modelo cargado y aceptación del borrador. |
 
 ```bash
@@ -99,31 +99,43 @@ curl -s 'http://127.0.0.1:8080/metrics?model=smol' | grep tokens_seconds
 
 ### Router NO disponible con el binario empaquetado (prueba 2026-11-03)
 
-En el teléfono, el `llama-server` b12017 instalado (paquete/binario Android) **falla el modo router al instante**:
+En el teléfono, el `llama-server` b12017 empaquetado (paquete/binario Android) **falla el modo router al instante**:
 
 ```
 failed to initialize router models: subprocess is not enabled on this build
 ```
 
-Causa (verificado en el código de llama.cpp, `CMakeLists.txt` del tag b12017 y de `master`): el router lanza un subproceso `llama-server` por modelo y eso depende de la opción CMake **`LLAMA_SUBPROCESS`** (*"llama-common: use subprocess, required by server tools and server router mode"*), que vale **`OFF` por defecto cuando se compila para Android** (también iOS/WASM). El [build.sh de Termux](https://github.com/termux/termux-packages/blob/master/packages/llama-cpp/build.sh) no la activa, así que `pkg install llama-cpp` tampoco trae router. Con estos binarios **el router no es usable**; los scripts lo detectan y usan single (SmolLM3).
+Causa (verificado en el código de llama.cpp, `CMakeLists.txt` del tag b12017 y de `master`): el router lanza un subproceso `llama-server` por modelo y eso depende de la opción CMake **`LLAMA_SUBPROCESS`** (*"llama-common: use subprocess, required by server tools and server router mode"*), que vale **`OFF` por defecto cuando se compila para Android** (también iOS/WASM). El [build.sh de Termux](https://github.com/termux/termux-packages/blob/master/packages/llama-cpp/build.sh) no la activa, así que `pkg install llama-cpp` tampoco trae router. Los scripts lo detectan y usan single (SmolLM3).
 
-Opciones si quieres router de verdad:
+### Router con llama.cpp compilado en Termux (probado 2026-11-03)
 
-1. **Compilar llama.cpp desde el código fuente en Termux** con la opción activada (30–90 min en el SD888):
-   ```bash
-   pkg install -y git cmake ninja clang make libandroid-spawn
-   git clone --depth 1 https://github.com/ggml-org/llama.cpp ~/src/llama.cpp
-   cmake -S ~/src/llama.cpp -B ~/src/llama.cpp/build -DCMAKE_BUILD_TYPE=Release \
-     -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod -DLLAMA_BUILD_SERVER=ON -DLLAMA_SUBPROCESS=ON
-   cmake --build ~/src/llama.cpp/build -j"$(nproc)"
-   cp -a ~/src/llama.cpp/build/bin/* ~/opt/llama-b12017/   # o LLM_BIN_DIR=… en ~/.llm.conf
-   rm -f ~/.cache/llm/router-capability && llm router-check
-   ```
-   (`bootstrap.sh` ya pasa `-DLLAMA_SUBPROCESS=ON` cuando compila desde fuente.) **No probado aún en el teléfono:** que el subproceso funcione bajo Android/Termux con esta opción forzada está sin verificar; si enlaza mal, prueba añadiendo `-DCMAKE_EXE_LINKER_FLAGS=-landroid-spawn` (lo que hace el paquete de Termux).
-2. **Proxy tipo [llama-swap](https://github.com/mostlygeek/llama-swap)**: un endpoint OpenAI que arranca/para un `llama-server` single por modelo según el campo `"model"` (mismo efecto que el router, sin necesitar `LLAMA_SUBPROCESS`). No integrado en estos scripts.
-3. Quedarse en **single** (`echo 'LLM_SERVER_MODE=single' >> ~/.llm.conf`): evita la sonda en cada arranque; `llm <modelo>` para cambiar de modelo.
+**Funciona.** Compilación en el propio teléfono (SD888, `-j6`, pantalla encendida): **~5 min** solo para `llama-server`, `llama-bench` y `llama-cli`.
+
+```bash
+pkg install -y git cmake ninja clang make libandroid-spawn
+git clone --depth 1 --branch b12017 https://github.com/ggml-org/llama.cpp ~/src/llama.cpp
+cmake -S ~/src/llama.cpp -B ~/src/llama.cpp/build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DLLAMA_CURL=ON -DLLAMA_BUILD_SERVER=ON -DLLAMA_SUBPROCESS=ON -DGGML_OPENMP=OFF \
+  -DCMAKE_C_FLAGS=-DSUBPROCESS_HAVE_CWD=0 -DCMAKE_CXX_FLAGS=-DSUBPROCESS_HAVE_CWD=0 \
+  -DCMAKE_EXE_LINKER_FLAGS=-landroid-spawn -DCMAKE_SHARED_LINKER_FLAGS=-landroid-spawn
+cmake --build ~/src/llama.cpp/build -j6 --target llama-server llama-bench llama-cli
+mkdir -p ~/opt/llama-b12017
+cp -a ~/src/llama.cpp/build/bin/{llama-server,llama-bench,llama-cli} ~/src/llama.cpp/build/bin/*.so* ~/opt/llama-b12017/
+rm -f ~/.cache/llm/router-capability && llm router-check   # → «router: soportado»
+```
+
+(`bootstrap.sh` usa estos mismos flags cuando compila desde fuente.)
+
+- **`-DSUBPROCESS_HAVE_CWD=0` es imprescindible:** sin él la compilación falla en `vendor/sheredom/subprocess.h` con *`posix_spawn_file_actions_addchdir_np` undeclared* (bionic solo lo declara desde API 34; Termux compila contra API 24). `llama-server` no usa el directorio de trabajo del subproceso, así que desactivarlo no cambia nada. `-landroid-spawn` aporta `posix_spawn*` (igual que el paquete de Termux).
+- **Dónde:** `~/opt/llama-b12017/` (binarios + `libllama.so`/`libggml*.so`). Los scripts prefieren `LLM_BIN_DIR=~/opt/llama-b12017` y exportan `LD_LIBRARY_PATH` (el RUNPATH del build pone `$PREFIX/lib` primero, donde están las libs del paquete); los hijos del router lo heredan. El paquete `llama-cpp` se queda instalado como respaldo.
+- **Verificado:** `/health` en ~2–3 s sin modelo; `/v1/models` lista `ds15 phi qwen05 qwen3b qwen3b-spec smol`; `/health` responde (~0,06 s) mientras carga un modelo; primer `smol` ~5 s de carga; cambiar a `qwen3b` descarga `smol` (`--models-max 1`); `llm unload` (0,2 s) libera la RAM (MemAvailable vuelve a ~3,9 GB); `--sleep-idle-seconds 600` aceptado y propagado a los hijos; `/metrics?model=qwen3b` da `predicted_tokens_seconds` (sin `?model=` el router devuelve **400**). tok/s en [benchmarks](benchmarks/rmx3311-llm.md#router-b12017-compilado-en-termux-2026-11-03).
+- **RAM:** con Jellyfin parado sobra (qwen3b cargado deja ~1,9 GB libres). Con poca RAM libre (~1,7 GB y swap lleno) la carga de qwen3b llegó a tardar ~9 min: usa `mode llm` (para Jellyfin/media) antes de pedir modelos grandes.
+
+Alternativas: proxy tipo [llama-swap](https://github.com/mostlygeek/llama-swap) (no integrado) o quedarse en **single** (`echo 'LLM_SERVER_MODE=single' >> ~/.llm.conf`).
 
 **Ojo con el router:** la API **exige** el campo `"model"` (la UI web tiene selector). Con `--models-max 1`, pedir otro modelo descarga el anterior (recarga ~10–15 s). En presets fijamos `ctx-size` (sin él, `--fit` elegiría el contexto máximo y en CPU la RAM se considera ilimitada). `thermal-guard` puede forzar menos hilos con `~/.cache/llm/threads-override`.
+
+**Pantalla encendida (brillo mínimo) para usar el LLM:** con la pantalla apagada ColorOS limita `cpu4` a 1,44 GHz y Qwen2.5-3B cae de ~8 a ~2,8 tok/s.
 
 **Benchmark en el teléfono** (baseline vs KV q8_0 vs especulativa): [`scripts/bench/run-llm-variants.sh`](../scripts/bench/run-llm-variants.sh) — ver [benchmarks/rmx3311-llm.md](benchmarks/rmx3311-llm.md#variantes-router--kv-q8_0--especulativa-b12017).
 

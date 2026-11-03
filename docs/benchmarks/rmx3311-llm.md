@@ -134,20 +134,37 @@ Binarios PC: `downloads/llama-android/` (gitignored).
 
 ## Variantes: router / KV q8_0 / especulativa (b12017)
 
-### Resultados 2026-11-03 (teléfono, condiciones degradadas)
+### Resultados 2026-11-03 — pantalla encendida (válidos)
 
-Condiciones: teléfono en segundo plano vía SSH, Jellyfin parado, `-t 4`, ctx 4096, generación de 120 tokens, temp 0 (greedy), `llama-server` b12017.
+Condiciones: binario empaquetado b12017 (`llama-server` single), `-t 4`, ctx 4096, generación de 120 tokens, temp 0 (greedy), Jellyfin parado, **pantalla encendida** (brillo mínimo); `cpu4` a su máximo normal **2,42 GHz**.
 
 | Variante | Prompt (tok/s) | Generación (tok/s) |
 |----------|---------------:|-------------------:|
-| Qwen2.5-3B Q4_K_M · KV f16 (base) | 2,08 | 2,84 |
-| Qwen2.5-3B · KV q8_0 + flash-attn | 4,29 | 2,87 |
-| Qwen2.5-3B + borrador Qwen2.5-0.5B (especulativa, n-max 8, p-min 0,75) | 4,29 | 2,86 (sin ganancia) |
-| SmolLM3-3B | 4,26 | 2,60 |
+| Qwen2.5-3B Q4_K_M · KV f16 (base) | 11,01 | **8,27** |
+| Qwen2.5-3B · KV q8_0 + flash-attn | 11,53 | 8,06 |
+| Qwen2.5-3B + borrador Qwen2.5-0.5B (especulativa, n-max 8, p-min 0,75) | 11,49 | 7,95 |
+| SmolLM3-3B | 10,95 | 7,22 |
 
-**Ojo — no sacar conclusiones todavía:** todo está muy por debajo de lo medido antes (~9,6 tok/s SmolLM3, ~6,9 tok/s Qwen2.5-3B). Durante la prueba: `cpu4` (núcleos medios) con `scaling_max_freq` limitado a **1,44 GHz**, **1,7 GB de swap** usados y **load avg ~8** → probablemente throttling de ColorOS en segundo plano / pantalla apagada. **Repetir con la pantalla encendida y Termux en primer plano** antes de decidir sobre especulativa o KV q8_0.
+**Decisiones:**
+- **KV q8_0 pasa a ser el defecto** (`LLM_KV_TYPE=q8_0` en `llm-common.sh` y `llm.conf.example`): −2,5 % de generación a cambio de ≈ la mitad de RAM de KV, que en este teléfono es el recurso escaso. `LLM_KV_TYPE=f16` para volver.
+- **Especulativa sin ganancia** en CPU con borrador 0.5B (7,95 vs 8,06) y +~0,5 GiB → **no es el defecto**; el preset `qwen3b-spec` se mantiene solo para pruebas.
 
-Router: **no probado** — el binario b12017 del teléfono no lo soporta (`subprocess is not enabled on this build`, ver [termux-llm-guide.md](../termux-llm-guide.md#router-no-disponible-con-el-binario-empaquetado-prueba-2026-11-03)).
+### Pantalla apagada = throttling (misma fecha, antes)
+
+Con la pantalla apagada / Termux en segundo plano, ColorOS limita `cpu4` (`scaling_max_freq`) a **1,44 GHz** (además había ~1,7 GB de swap y load ~8): Qwen2.5-3B cayó a **~2,8 tok/s** (f16 2,84 · q8_0 2,87 · spec 2,86 · SmolLM3 2,60). **Recomendación:** para usar el LLM, **pantalla encendida con brillo mínimo** (o Termux en primer plano); las cifras con pantalla apagada no sirven para comparar variantes.
+
+### Router (b12017 compilado en Termux, 2026-11-03)
+
+Binario propio `~/opt/llama-b12017` con `-DLLAMA_SUBPROCESS=ON` ([cómo](../termux-llm-guide.md#router-con-llamacpp-compilado-en-termux-probado-2026-11-03)), `mode llm` → router en :8080, `--models-max 1`, pantalla encendida, Jellyfin parado (MemAvailable ~3,9 GB antes de cargar). Petición `/v1/chat/completions` con 120 tokens (`ignore_eos`), temp 0; hilos según preset (smol 2, qwen3b 4). Prompt de ~75 tokens distinto al de la tabla anterior (más corto) → **no comparar el prompt tok/s** entre tablas.
+
+| Modelo | KV | Prompt (tok/s) | Generación (tok/s) | Notas |
+|--------|----|---------------:|-------------------:|-------|
+| smol (SmolLM3-3B, 2 hilos) | f16 | 24,07 | 9,29 (2.ª: 9,03) | 1.ª petición 21,9 s de pared incl. carga |
+| qwen3b (Qwen2.5-3B, 4 hilos) | f16 | 35,43 | 11,40 (2.ª: 11,60) | cambio smol→qwen3b 17,6 s incl. carga; `/metrics?model=qwen3b` 11,50 gen / 34,0 prompt |
+| smol | q8_0 | 23,58 | 9,34 (2.ª: 8,86) | |
+| qwen3b | q8_0 | 35,76 | 11,19 (2.ª: 11,16) | MemAvailable con qwen3b cargado ~1,9 GB |
+
+El router no penaliza la velocidad frente a single (las cifras son incluso mayores; el prompt es más corto y caliente). Con poca RAM (Jellyfin activo / swap lleno, ~1,7 GB libres) la carga de qwen3b llegó a ~9 min → `mode llm` antes de usar modelos grandes.
 
 ### Cómo repetir
 

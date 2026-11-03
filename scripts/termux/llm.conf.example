@@ -13,15 +13,17 @@ LLM_SLEEP_IDLE=600          # router: s sin peticiones → descarga el modelo de
 LLM_SINGLE_SLEEP_IDLE=-1    # igual para «llm <modelo>» (single); -1 = comportamiento anterior
 LLM_ROUTER_DEFAULT_MODEL=smol
 LLM_ROUTER_MODELS_DIR=0     # 1 = además lista todos los GGUF de ~/models con su nombre de fichero
-#LLM_PROBE_PORT=18090       # puerto libre para la sonda del router (no 8090: qBittorrent)
+#LLM_PROBE_PORT=18099       # sonda del router (si está ocupado prueba los 9 siguientes; no 8090: qBittorrent)
 
-# KV cache: f16 (defecto) | q8_0 (≈ mitad de RAM de contexto; activa --flash-attn on)
-LLM_KV_TYPE=f16
+# KV cache: q8_0 (defecto; ≈ mitad de RAM de contexto, activa --flash-attn on; qwen3b gen 8.06 vs
+# 8.27 tok/s con f16) | f16 (un pelo más rápido, más RAM: úsalo solo si sobra memoria)
+LLM_KV_TYPE=q8_0
 LLM_FLASH_ATTN=auto         # auto | on | off (ignorado con KV cuantizada: siempre on)
 
 LLM_METRICS=1               # --metrics → /metrics (Prometheus) y tok/s en el portal
 
-# Especulativa (llm qwen3b-spec / preset router «qwen3b-spec»)
+# Especulativa (llm qwen3b-spec / preset router «qwen3b-spec»): NO es el defecto. En RMX3311
+# (CPU, borrador 0.5B) no gana nada (gen 7.95 vs 8.06 tok/s) y gasta ~0.5 GB más; se mantiene para pruebas.
 LLM_SPEC_DRAFT_N_MAX=8
 LLM_SPEC_DRAFT_N_MIN=0
 LLM_SPEC_DRAFT_P_MIN=0.75

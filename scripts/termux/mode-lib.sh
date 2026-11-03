@@ -41,6 +41,13 @@ mode_stop_llama() {
       mode_llama_running || return 0
       sleep 1
     done
+    # El router puede tardar en salir (hijos cargando un modelo bajo presión de RAM): SIGKILL
+    echo "Aviso: llama-server no termina con SIGTERM en 15 s — SIGKILL." >&2
+    pkill -KILL -f '/llama-server' 2>/dev/null || true
+    for i in $(seq 1 5); do
+      mode_llama_running || return 0
+      sleep 1
+    done
     mode_llama_running && return 1
   fi
   return 0
@@ -235,7 +242,7 @@ mode_require_mem() {
 mode_start_llm_single() {
   echo "==> Arrancando llm smol (nohup, single)..."
   nohup bash -lc 'export LLM_REASONING=off; export PATH=$HOME/bin:$PREFIX/bin:$PATH; exec run-smol.sh 4096' \
-    >>"${HOME}/llm-mode.log" 2>&1 &
+    </dev/null >>"${HOME}/llm-mode.log" 2>&1 9>&- &
 }
 
 mode_llm_port() {
@@ -272,8 +279,14 @@ mode_start_llm_background() {
   # LLM_SERVER_MODE (~/.llm.conf): router (defecto) | single (SmolLM3 fijo, comportamiento v1)
   # Si el build no soporta router (paquete Termux), cae a single al momento con aviso.
   if mode_llama_running; then
-    echo "llama-server ya activo."
-    return 0
+    # Solo vale si responde en el puerto de ~/.llm.conf; otro llama-server (prueba en 18090,
+    # sonda, proceso colgado) se para y se arranca el del modo.
+    if curl -sf -m 2 "http://127.0.0.1:$(mode_llm_port)/health" >/dev/null 2>&1; then
+      echo "llama-server ya activo (:$(mode_llm_port))."
+      return 0
+    fi
+    echo "==> Hay un llama-server que no responde en :$(mode_llm_port) — se para."
+    mode_stop_llama || { echo "Error: no se pudo parar llama-server." >&2; return 1; }
   fi
   local th
   th="$(mode_thermal_state)"
@@ -303,7 +316,7 @@ mode_start_llm_background() {
     [[ -f "$log" ]] && off="$(wc -c <"$log" 2>/dev/null | tr -d ' ')"
     # LLM_ROUTER_NO_FALLBACK=1: si falla, run-router.sh no lanza single él mismo (lo hace mode)
     nohup bash -lc 'export LLM_REASONING=off LLM_ROUTER_NO_FALLBACK=1; export PATH=$HOME/bin:$PREFIX/bin:$PATH; exec run-router.sh' \
-      >>"$log" 2>&1 &
+      </dev/null >>"$log" 2>&1 9>&- &
     # El router responde /health sin modelo cargado: 30 s bastan; si no, fallback a single
     local rc=0
     mode_wait_llm_health 30 "$log" "${off:-0}" || rc=$?
@@ -349,11 +362,8 @@ mode_apply_unlocked() {
       mode_stop_media_stack
       pgrep -f 'qemu-system-' >/dev/null 2>&1 && pkill -f 'qemu-system-' 2>/dev/null || true
       mode_sv_down llama-smol
-      if mode_llama_running; then
-        echo "llama-server ya activo."
-      else
-        mode_start_llm_background || return 1
-      fi
+      # mode_start_llm_background comprueba /health en el puerto configurado («ya activo»)
+      mode_start_llm_background || return 1
       mode_write_state llm
       mode_log_transition "$from" llm
       echo "Modo: llm"

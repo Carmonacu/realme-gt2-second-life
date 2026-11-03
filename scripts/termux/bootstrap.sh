@@ -45,17 +45,27 @@ else
     pkg install -y git cmake ninja clang make libandroid-spawn
     BUILD_DIR="${HOME}/src/llama.cpp"
     if [[ ! -d "$BUILD_DIR" ]]; then
-      git clone --depth 1 https://github.com/ggml-org/llama.cpp "$BUILD_DIR"
+      git clone --depth 1 --branch b12017 https://github.com/ggml-org/llama.cpp "$BUILD_DIR"
     fi
-    cmake -S "$BUILD_DIR" -B "$BUILD_DIR/build" -DCMAKE_BUILD_TYPE=Release \
-      -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod \
+    # LLAMA_SUBPROCESS=ON: router de llama-server (OFF por defecto en Android).
+    # SUBPROCESS_HAVE_CWD=0: bionic (API 24) no declara posix_spawn_file_actions_addchdir_np
+    # (vendor/sheredom/subprocess.h); llama-server no usa el cwd del subproceso.
+    # -landroid-spawn: posix_spawn* en Termux. Probado en RMX3311 2026-11-03 (~5 min, -j6).
+    cmake -S "$BUILD_DIR" -B "$BUILD_DIR/build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
       -DLLAMA_CURL=ON \
       -DLLAMA_BUILD_SERVER=ON \
-      -DLLAMA_SUBPROCESS=ON   # router de llama-server (OFF por defecto en Android)
-    cmake --build "$BUILD_DIR/build" -j"$(nproc)"
+      -DLLAMA_SUBPROCESS=ON \
+      -DGGML_OPENMP=OFF \
+      -DCMAKE_C_FLAGS=-DSUBPROCESS_HAVE_CWD=0 \
+      -DCMAKE_CXX_FLAGS=-DSUBPROCESS_HAVE_CWD=0 \
+      -DCMAKE_EXE_LINKER_FLAGS=-landroid-spawn \
+      -DCMAKE_SHARED_LINKER_FLAGS=-landroid-spawn
+    cmake --build "$BUILD_DIR/build" -j"$(nproc)" --target llama-server llama-bench llama-cli
     mkdir -p "${HOME}/opt/llama-b12017"
-    cp -a "$BUILD_DIR/build/bin/"* "${HOME}/opt/llama-b12017/" 2>/dev/null || \
-      cp -a "$BUILD_DIR/build/"* "${HOME}/opt/llama-b12017/" 2>/dev/null || true
+    # Binarios + libllama/libggml*.so (los scripts ponen LD_LIBRARY_PATH=~/opt/llama-b12017)
+    cp -a "$BUILD_DIR/build/bin/"llama-server "$BUILD_DIR/build/bin/"llama-bench \
+      "$BUILD_DIR/build/bin/"llama-cli "$BUILD_DIR/build/bin/"*.so* "${HOME}/opt/llama-b12017/" 2>/dev/null || true
+    rm -f "${HOME}/.cache/llm/router-capability"
   fi
 fi
 

@@ -42,7 +42,7 @@ LLM_REASONING="${LLM_REASONING:-off}"
 # y el router falla con «subprocess is not enabled on this build». llm_router_check lo detecta
 # antes de arrancar y todo (mode llm, servicio llama-smol, llm router) cae a single al momento.
 LLM_SERVER_MODE="${LLM_SERVER_MODE:-router}"
-LLM_PROBE_PORT="${LLM_PROBE_PORT:-18090}"          # puerto libre para la sonda del router (8090 = qBittorrent)
+LLM_PROBE_PORT="${LLM_PROBE_PORT:-18099}"          # sonda del router (8090 = qBittorrent; 18090 = pruebas)
 LLM_ROUTER_PROBE_TIMEOUT="${LLM_ROUTER_PROBE_TIMEOUT:-15}" # s máx. de la sonda
 LLM_MODELS_MAX="${LLM_MODELS_MAX:-1}"             # router: modelos cargados a la vez
 LLM_SLEEP_IDLE="${LLM_SLEEP_IDLE:-600}"           # router: s sin peticiones → descarga modelo (-1 = nunca)
@@ -50,8 +50,9 @@ LLM_SINGLE_SLEEP_IDLE="${LLM_SINGLE_SLEEP_IDLE:--1}" # single: igual, desactivad
 LLM_ROUTER_DEFAULT_MODEL="${LLM_ROUTER_DEFAULT_MODEL:-smol}"
 LLM_ROUTER_MODELS_DIR="${LLM_ROUTER_MODELS_DIR:-0}" # 1 = añade --models-dir (nombres largos = fichero)
 LLM_METRICS="${LLM_METRICS:-1}"                   # --metrics (Prometheus /metrics; portal tok/s)
-# KV cache: f16 (por defecto, igual que antes) | q8_0 (≈ mitad de RAM de KV; V cuantizada exige flash-attn)
-LLM_KV_TYPE="${LLM_KV_TYPE:-f16}"
+# KV cache: q8_0 (defecto: ≈ mitad de RAM de KV, −2–3 % tok/s medido en RMX3311; exige flash-attn)
+#           | f16 (máxima velocidad, más RAM)
+LLM_KV_TYPE="${LLM_KV_TYPE:-q8_0}"
 LLM_FLASH_ATTN="${LLM_FLASH_ATTN:-auto}"          # auto|on|off (con q8_0 se fuerza on)
 # Decodificación especulativa (perfil qwen3b-spec): borrador Qwen2.5-0.5B
 LLM_SPEC_DRAFT_N_MAX="${LLM_SPEC_DRAFT_N_MAX:-8}"
@@ -411,6 +412,13 @@ AVISO: el modo router NO está disponible con este llama-server:
 EOF
 }
 
+# llm_port_in_use <port>: 0 si algo acepta conexiones TCP en 127.0.0.1:<port>
+llm_port_in_use() {
+  local code
+  code="$(curl -s -m 1 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$1/" 2>/dev/null)"
+  [[ -n "$code" && "$code" != "000" ]]
+}
+
 # llm_router_check: ¿soporta este llama-server el modo router?
 #   0 = sí · 1 = no (build sin subprocess; resultado cacheado por binario) · 2 = indeterminado
 # Arranca una sonda breve en 127.0.0.1:$LLM_PROBE_PORT (el router no carga modelos al iniciar)
@@ -434,15 +442,30 @@ llm_router_check() {
   local preset="$LLM_CACHE_DIR/router-probe.ini" log="$LLM_CACHE_DIR/router-probe.log"
   printf 'version = 1\n\n[*]\nn-gpu-layers = 0\n' >"$preset"
   : >"$log"
+  # Puerto libre: si algo ya escucha, el /health OK sería de otro servidor (falso «sí»)
+  local port="$LLM_PROBE_PORT" k
+  for k in $(seq 0 9); do
+    llm_port_in_use "$port" || break
+    port=$((LLM_PROBE_PORT + k + 1))
+  done
+  if llm_port_in_use "$port"; then
+    echo "Aviso: sin puerto libre para la sonda del router (${LLM_PROBE_PORT}+)." >&2
+    return 2
+  fi
   "$LLAMA_SERVER" --models-preset "$preset" --models-max 1 \
-    --host 127.0.0.1 --port "$LLM_PROBE_PORT" >"$log" 2>&1 &
+    --host 127.0.0.1 --port "$port" </dev/null >"$log" 2>&1 9>&- &
   local pid=$! i res=2
   for i in $(seq 1 "$((LLM_ROUTER_PROBE_TIMEOUT * 2))"); do
     if grep -q "$LLM_ROUTER_UNSUPPORTED_RE" "$log" 2>/dev/null; then
       res=1; break
     fi
-    if curl -sf -m 1 "http://127.0.0.1:${LLM_PROBE_PORT}/health" >/dev/null 2>&1; then
-      res=0; break
+    if grep -q "couldn't bind" "$log" 2>/dev/null; then
+      res=2; break
+    fi
+    if curl -sf -m 1 "http://127.0.0.1:${port}/health" >/dev/null 2>&1; then
+      # Debe ser nuestra sonda (sigue viva), no otro proceso que ocupó el puerto
+      kill -0 "$pid" 2>/dev/null && res=0
+      break
     fi
     if ! kill -0 "$pid" 2>/dev/null; then
       grep -q "$LLM_ROUTER_UNSUPPORTED_RE" "$log" 2>/dev/null && res=1
