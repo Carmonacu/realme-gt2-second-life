@@ -11,7 +11,7 @@ power_load_conf() {
   local line key
   [[ -f "$1" ]] || return 0
   while IFS= read -r line || [[ -n "$line" ]]; do
-    [[ "$line" =~ ^[[:space:]]*((POWER|CHARGE|THERMAL)_[A-Z0-9_]+)= ]] || continue
+    [[ "$line" =~ ^[[:space:]]*((POWER|CHARGE|THERMAL|PLUG)_[A-Z0-9_]+)= ]] || continue
     key="${BASH_REMATCH[1]}"
     [[ -n "${!key+x}" ]] && continue
     eval "$line"   # fichero propio del usuario (mismo nivel de confianza que «source»)
@@ -30,6 +30,18 @@ POWER_MQTT_PORT="${POWER_MQTT_PORT:-1883}"
 POWER_MQTT_PREFIX="${POWER_MQTT_PREFIX:-gt2/power}"
 POWER_MQTT_USER="${POWER_MQTT_USER:-}"
 POWER_MQTT_PASS="${POWER_MQTT_PASS:-}"
+# Enchufe controlado DIRECTAMENTE por charge-limiter vía MQTT (sin Node-RED):
+#   nodered    = solo publica charger/want; el flujo Node-RED conmuta el enchufe (defecto, comportamiento v1)
+#   openbeken  = OpenBeken (OpenBK7231T_App / OpenLN882H): <PLUG_TOPIC>/<PLUG_CHANNEL>/set 1|0
+#   tasmota    = Tasmota: cmnd/<PLUG_TOPIC>/POWER ON|OFF · estado stat/<PLUG_TOPIC>/POWER
+#   shelly-gen2 = Shelly Plus/Pro (MQTT): <PLUG_TOPIC>/command/switch:0 on|off · estado <PLUG_TOPIC>/status/switch:0
+PLUG_BACKEND="${PLUG_BACKEND:-nodered}"
+PLUG_TOPIC="${PLUG_TOPIC:-lspa9}"           # OpenBeken: «Client Topic» (Config → MQTT), p. ej. lspa9
+PLUG_CHANNEL="${PLUG_CHANNEL:-1}"           # OpenBeken: canal del relé (pin «Rel;N»): CB2S/BK7231N = 1 · LN882H = 0
+PLUG_OBK_CMD="${PLUG_OBK_CMD:-channel}"     # channel = <topic>/<canal>/set 1|0 · power = cmnd/<topic>/POWER ON|OFF
+PLUG_REPLY_WAIT="${PLUG_REPLY_WAIT:-4}"     # s esperando respuesta de estado del enchufe
+PLUG_POWER_WAIT="${PLUG_POWER_WAIT:-12}"    # s esperando una lectura de potencia (W)
+
 # Notificaciones: termux-notification + hook opcional (p. ej. ntfy). El hook recibe: <título> <mensaje> <prioridad>
 POWER_NOTIFY="${POWER_NOTIFY:-1}"
 POWER_NOTIFY_HOOK="${POWER_NOTIFY_HOOK:-${HOME}/.config/gt2-power/notify-hook}"
@@ -166,4 +178,121 @@ power_portal_refresh() {
 # Escritura atómica: power_write_file <ruta> <contenido>
 power_write_file() {
   printf '%s\n' "$2" >"$1.tmp.$$" 2>/dev/null && mv -f "$1.tmp.$$" "$1"
+}
+
+# --- Enchufe directo por MQTT (PLUG_BACKEND ≠ nodered) ---
+
+# power_mqtt_raw_pub <topic> <payload> [retain=0] — payload vacío = mensaje nulo (-n)
+power_mqtt_raw_pub() {
+  local topic="$1" payload="$2" retain="${3:-0}" args=()
+  command -v mosquitto_pub >/dev/null 2>&1 || return 2
+  power_mqtt_args args
+  [[ "$retain" == "1" ]] && args+=(-r)
+  if [[ -z "$payload" ]]; then
+    timeout 10 mosquitto_pub "${args[@]}" -q 1 -t "$topic" -n 2>/dev/null
+  else
+    timeout 10 mosquitto_pub "${args[@]}" -q 1 -t "$topic" -m "$payload" 2>/dev/null
+  fi
+}
+
+# power_mqtt_request <sub_topic> <wait_s> <filtro_regex> [<pub_topic> <payload>]
+# Se suscribe, (opcional) publica la petición y devuelve el primer payload que casa con el filtro.
+# Ignora payloads vacíos (p. ej. nuestra propia petición «get» vacía de OpenBeken).
+power_mqtt_request() {
+  local sub="$1" wait="$2" re="$3" pub="${4:-}" pay="${5:-}" args=() tmp pid line=""
+  command -v mosquitto_sub >/dev/null 2>&1 || return 2
+  power_mqtt_args args
+  tmp="$(mktemp "${POWER_CACHE_DIR}/mqreq.XXXXXX")" || return 1
+  timeout "$((wait + 2))" mosquitto_sub "${args[@]}" -t "$sub" -W "$wait" >"$tmp" 2>/dev/null &
+  pid=$!
+  if [[ -n "$pub" ]]; then
+    sleep 0.5
+    power_mqtt_raw_pub "$pub" "$pay" 0 || true
+  fi
+  local _
+  for _ in $(seq 1 "$((wait * 4))"); do
+    line="$(grep -m1 -E "$re" "$tmp" 2>/dev/null || true)"
+    [[ -n "$line" ]] && break
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.25
+  done
+  [[ -n "$line" ]] || line="$(grep -m1 -E "$re" "$tmp" 2>/dev/null || true)"
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  rm -f "$tmp"
+  [[ -n "$line" ]] || return 1
+  printf '%s\n' "$line"
+}
+
+power_plug_direct() { [[ "$PLUG_BACKEND" != "nodered" && "$PLUG_BACKEND" != "" ]]; }
+
+# power_plug_set ON|OFF
+power_plug_set() {
+  local want="$1" on=0
+  [[ "$want" == "ON" ]] && on=1
+  case "$PLUG_BACKEND" in
+    openbeken)
+      if [[ "$PLUG_OBK_CMD" == "power" ]]; then
+        # Estilo Tasmota: OpenBeken aplica POWER al primer canal con relé (indexación 0 o 1)
+        power_mqtt_raw_pub "cmnd/${PLUG_TOPIC}/POWER" "$want"
+      else
+        power_mqtt_raw_pub "${PLUG_TOPIC}/${PLUG_CHANNEL}/set" "$on"
+      fi
+      ;;
+    tasmota) power_mqtt_raw_pub "cmnd/${PLUG_TOPIC}/POWER" "$want" ;;
+    shelly-gen2) power_mqtt_raw_pub "${PLUG_TOPIC}/command/switch:0" "$([[ $on == 1 ]] && echo on || echo off)" ;;
+    nodered|"") return 0 ;;
+    *) echo "PLUG_BACKEND desconocido: $PLUG_BACKEND" >&2; return 1 ;;
+  esac
+}
+
+# power_plug_get → ON|OFF (rc 1 si el enchufe no responde)
+power_plug_get() {
+  local v
+  case "$PLUG_BACKEND" in
+    openbeken)
+      # Publicar vacío en <topic>/<canal>/get pide al dispositivo que publique el valor del canal
+      v="$(power_mqtt_request "${PLUG_TOPIC}/${PLUG_CHANNEL}/get" "$PLUG_REPLY_WAIT" '^-?[0-9]+$' \
+        "${PLUG_TOPIC}/${PLUG_CHANNEL}/get" "")" || return 1
+      [[ "$v" == "0" ]] && echo OFF || echo ON
+      ;;
+    tasmota)
+      # cmnd/<topic>/POWER sin payload = consulta → stat/<topic>/POWER ON|OFF
+      v="$(power_mqtt_request "stat/${PLUG_TOPIC}/POWER" "$PLUG_REPLY_WAIT" '^(ON|OFF)$' \
+        "cmnd/${PLUG_TOPIC}/POWER" "")" || return 1
+      echo "$v"
+      ;;
+    shelly-gen2)
+      v="$(power_mqtt_request "${PLUG_TOPIC}/status/switch:0" "$PLUG_REPLY_WAIT" '"output"' \
+        "${PLUG_TOPIC}/command/switch:0" "status_update")" || return 1
+      jq -r 'if .output then "ON" else "OFF" end' <<<"$v" 2>/dev/null || return 1
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# power_plug_watts → potencia instantánea en W (rc 1 si no hay lectura)
+power_plug_watts() {
+  local v
+  case "$PLUG_BACKEND" in
+    openbeken)
+      # BL0937/BL0942 publican <topic>/power/get al cambiar (umbral) y en el broadcast periódico.
+      # Además se pide con un «get» vacío (documentado para variables como led_dimmer; para power
+      # no está garantizado → si no responde se espera al siguiente envío, hasta PLUG_POWER_WAIT s).
+      v="$(power_mqtt_request "${PLUG_TOPIC}/power/get" "$PLUG_POWER_WAIT" '^-?[0-9]+([.][0-9]+)?$' \
+        "${PLUG_TOPIC}/power/get" "")" || return 1
+      echo "$v"
+      ;;
+    tasmota)
+      v="$(power_mqtt_request "stat/${PLUG_TOPIC}/STATUS8" "$PLUG_REPLY_WAIT" 'ENERGY' \
+        "cmnd/${PLUG_TOPIC}/STATUS" "8")" || return 1
+      jq -r '.StatusSNS.ENERGY.Power // empty' <<<"$v" 2>/dev/null
+      ;;
+    shelly-gen2)
+      v="$(power_mqtt_request "${PLUG_TOPIC}/status/switch:0" "$PLUG_REPLY_WAIT" '"apower"' \
+        "${PLUG_TOPIC}/command/switch:0" "status_update")" || return 1
+      jq -r '.apower // empty' <<<"$v" 2>/dev/null
+      ;;
+    *) return 1 ;;
+  esac
 }

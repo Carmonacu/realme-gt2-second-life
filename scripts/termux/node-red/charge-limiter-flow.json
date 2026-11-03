@@ -4,7 +4,7 @@
     "type": "tab",
     "label": "GT2 limitador de carga",
     "disabled": false,
-    "info": "Conmuta un enchufe inteligente según gt2/power/charger/want (publicado por charge-limiter en el móvil).\n1) Edita las variables de entorno de esta pestaña (doble clic en la pestaña → Environment):\n   PLUG_TYPE = dry-run | tasmota-mqtt | tasmota-http | shelly-gen2-http | shelly-gen1-http | shelly-gen2-mqtt\n   PLUG_HOST = IP del enchufe (HTTP) · PLUG_MQTT_TOPIC = topic Tasmota o id Shelly (MQTT)\n2) Deploy. Con dry-run solo registra lo que haría.\nSeguridad: sin latido del limitador 15 min → enchufe ON (fail-safe) + alerta en gt2/power/charger/alert.",
+    "info": "Conmuta un enchufe inteligente según gt2/power/charger/want (publicado por charge-limiter en el móvil).\n1) Edita las variables de entorno de esta pestaña (doble clic en la pestaña → Environment):\n   PLUG_TYPE = dry-run | openbeken-mqtt | tasmota-mqtt | tasmota-http | shelly-gen2-http | shelly-gen1-http | shelly-gen2-mqtt\n   PLUG_HOST = IP del enchufe (HTTP) · PLUG_MQTT_TOPIC = topic Tasmota, id Shelly o «Client Topic» OpenBeken (p. ej. lspa9) · PLUG_CHANNEL = canal del relé OpenBeken (CB2S/BK7231N: 1 · LN882H: 0)\n2) Deploy. Con dry-run solo registra lo que haría.\nSeguridad: sin latido del limitador 15 min → enchufe ON (fail-safe) + alerta en gt2/power/charger/alert.",
     "env": [
       {
         "name": "PLUG_TYPE",
@@ -19,6 +19,11 @@
       {
         "name": "PLUG_MQTT_TOPIC",
         "value": "tasmota_plug",
+        "type": "str"
+      },
+      {
+        "name": "PLUG_CHANNEL",
+        "value": "1",
         "type": "str"
       }
     ]
@@ -57,8 +62,8 @@
   {
     "id": "gt2_c_comment",
     "type": "comment",
-    "name": "Limitador de carga GT2 — edita PLUG_TYPE / PLUG_HOST / PLUG_MQTT_TOPIC en la pestaña (Environment)",
-    "info": "Ver docs/always-on-battery.md §9 del repo. Topics: gt2/power/charger/want (entrada), plug_state y alert (salida, retenidos).",
+    "name": "Limitador de carga GT2 — edita PLUG_TYPE / PLUG_HOST / PLUG_MQTT_TOPIC / PLUG_CHANNEL en la pestaña (Environment)",
+    "info": "Ver docs/always-on-battery.md §9 del repo. Topics: gt2/power/charger/want (entrada), plug_state y alert (salida, retenidos). OpenBeken (ELIVCO LSPA9): docs/smart-plug-openbeken.md.",
     "x": 380,
     "y": 40,
     "wires": [],
@@ -89,8 +94,8 @@
     "id": "gt2_c_adapt",
     "type": "function",
     "name": "Adaptador enchufe",
-    "func": "// Normaliza: cualquier valor distinto de OFF → ON (fail-safe: seguir cargando)\nconst want = String(msg.payload).trim().toUpperCase() === 'OFF' ? 'OFF' : 'ON';\nconst on = want === 'ON';\nconst type = (env.get('PLUG_TYPE') || 'dry-run').trim();\nconst host = (env.get('PLUG_HOST') || '').trim();\nconst topic = (env.get('PLUG_MQTT_TOPIC') || 'tasmota_plug').trim();\nflow.set('wanted', want);\nflow.set('wanted_ts', Date.now());\nflow.set('wanted_reason', msg.reason || '');\nnode.status({ fill: on ? 'green' : 'grey', shape: 'dot', text: type + ': ' + want + (msg.reason ? ' (' + msg.reason + ')' : '') });\n// Salidas: 1 = comando MQTT, 2 = petición HTTP, 3 = dry-run/log\nswitch (type) {\n  case 'tasmota-mqtt':\n    return [{ topic: 'cmnd/' + topic + '/POWER', payload: want, retain: false, want }, null, null];\n  case 'shelly-gen2-mqtt':\n    return [{ topic: topic + '/command/switch:0', payload: on ? 'on' : 'off', retain: false, want }, null, null];\n  case 'tasmota-http':\n    return [null, { url: 'http://' + host + '/cm?cmnd=Power%20' + (on ? 'On' : 'Off'), want, plugType: type }, null];\n  case 'shelly-gen2-http':\n    return [null, { url: 'http://' + host + '/rpc/Switch.Set?id=0&on=' + on, want, plugType: type }, null];\n  case 'shelly-gen1-http':\n    return [null, { url: 'http://' + host + '/relay/0?turn=' + (on ? 'on' : 'off'), want, plugType: type }, null];\n  case 'dry-run':\n    return [null, null, { payload: '[dry-run] enchufe → ' + want, want }];\n  default:\n    node.warn('PLUG_TYPE desconocido: ' + type);\n    return [null, null, { payload: 'PLUG_TYPE desconocido: ' + type, want, alert: true }];\n}",
-    "outputs": 3,
+    "func": "// Normaliza: cualquier valor distinto de OFF → ON (fail-safe: seguir cargando)\nconst want = String(msg.payload).trim().toUpperCase() === 'OFF' ? 'OFF' : 'ON';\nconst on = want === 'ON';\nconst type = (env.get('PLUG_TYPE') || 'dry-run').trim();\nconst host = (env.get('PLUG_HOST') || '').trim();\nconst topic = (env.get('PLUG_MQTT_TOPIC') || 'tasmota_plug').trim();\nflow.set('wanted', want);\nflow.set('wanted_ts', Date.now());\nflow.set('wanted_reason', msg.reason || '');\nnode.status({ fill: on ? 'green' : 'grey', shape: 'dot', text: type + ': ' + want + (msg.reason ? ' (' + msg.reason + ')' : '') });\n// Salidas: 1 = comando MQTT, 2 = petición HTTP, 3 = dry-run/log, 4 = consulta MQTT (sin espera de confirmación)\nconst ch = String(env.get('PLUG_CHANNEL') || '1').trim();\nswitch (type) {\n  case 'openbeken-mqtt':\n    // OpenBeken: <topic>/<canal>/set 1|0; el «get» vacío pide que publique <topic>/<canal>/get (confirmación\n    // aunque el relé ya estuviera en ese estado y no haya cambio que publicar)\n    return [{ topic: topic + '/' + ch + '/set', payload: on ? '1' : '0', retain: false, want }, null, null,\n            { topic: topic + '/' + ch + '/get', payload: '', retain: false }];\n  case 'tasmota-mqtt':\n    return [{ topic: 'cmnd/' + topic + '/POWER', payload: want, retain: false, want }, null, null];\n  case 'shelly-gen2-mqtt':\n    return [{ topic: topic + '/command/switch:0', payload: on ? 'on' : 'off', retain: false, want }, null, null];\n  case 'tasmota-http':\n    return [null, { url: 'http://' + host + '/cm?cmnd=Power%20' + (on ? 'On' : 'Off'), want, plugType: type }, null];\n  case 'shelly-gen2-http':\n    return [null, { url: 'http://' + host + '/rpc/Switch.Set?id=0&on=' + on, want, plugType: type }, null];\n  case 'shelly-gen1-http':\n    return [null, { url: 'http://' + host + '/relay/0?turn=' + (on ? 'on' : 'off'), want, plugType: type }, null];\n  case 'dry-run':\n    return [null, null, { payload: '[dry-run] enchufe → ' + want, want }];\n  default:\n    node.warn('PLUG_TYPE desconocido: ' + type);\n    return [null, null, { payload: 'PLUG_TYPE desconocido: ' + type, want, alert: true }];\n}",
+    "outputs": 4,
     "timeout": 0,
     "noerr": 0,
     "initialize": "",
@@ -109,6 +114,9 @@
       ],
       [
         "gt2_c_dry"
+      ],
+      [
+        "gt2_c_out_cmd"
       ]
     ],
     "z": "gt2_charge_tab"
@@ -247,10 +255,31 @@
     "z": "gt2_charge_tab"
   },
   {
+    "id": "gt2_c_in_obk",
+    "type": "mqtt in",
+    "name": "estado OpenBeken (<topic>/<canal>/get)",
+    "topic": "+/+/get",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "gt2_charge_broker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 170,
+    "y": 360,
+    "wires": [
+      [
+        "gt2_c_conf_mqtt"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
     "id": "gt2_c_conf_mqtt",
     "type": "function",
     "name": "Confirmación MQTT",
-    "func": "// Estado publicado por el enchufe (Tasmota stat/<topic>/POWER o Shelly Gen2 <id>/status/switch:0)\nconst topic = (env.get('PLUG_MQTT_TOPIC') || 'tasmota_plug').trim();\nconst type = (env.get('PLUG_TYPE') || 'dry-run').trim();\nlet actual = null;\nif (type === 'tasmota-mqtt' && msg.topic === 'stat/' + topic + '/POWER') {\n  actual = String(msg.payload).toUpperCase();\n} else if (type === 'shelly-gen2-mqtt' && msg.topic === topic + '/status/switch:0') {\n  let p = msg.payload;\n  try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { return null; }\n  if (p && typeof p.output === 'boolean') actual = p.output ? 'ON' : 'OFF';\n}\nif (!actual) return null;\nconst want = flow.get('wanted');\nconst out = [{ payload: actual }, { reset: true }, null];\nif (want && actual !== want && Date.now() - (flow.get('wanted_ts') || 0) < 120000) {\n  out[2] = { payload: 'Enchufe informa ' + actual + ' pero se pidió ' + want };\n}\nreturn out;",
+    "func": "// Estado publicado por el enchufe (Tasmota stat/<topic>/POWER, Shelly Gen2 <id>/status/switch:0,\n// OpenBeken <topic>/<canal>/get con 0|1)\nconst ch = String(env.get('PLUG_CHANNEL') || '1').trim();\nconst topic = (env.get('PLUG_MQTT_TOPIC') || 'tasmota_plug').trim();\nconst type = (env.get('PLUG_TYPE') || 'dry-run').trim();\nlet actual = null;\nif (type === 'openbeken-mqtt' && msg.topic === topic + '/' + ch + '/get') {\n  const v = String(msg.payload).trim();\n  if (!/^-?[0-9]+$/.test(v)) return null;   // nuestra propia consulta vacía\n  actual = Number(v) !== 0 ? 'ON' : 'OFF';\n} else if (type === 'tasmota-mqtt' && msg.topic === 'stat/' + topic + '/POWER') {\n  actual = String(msg.payload).toUpperCase();\n} else if (type === 'shelly-gen2-mqtt' && msg.topic === topic + '/status/switch:0') {\n  let p = msg.payload;\n  try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { return null; }\n  if (p && typeof p.output === 'boolean') actual = p.output ? 'ON' : 'OFF';\n}\nif (!actual) return null;\nconst want = flow.get('wanted');\nconst out = [{ payload: actual }, { reset: true }, null];\nif (want && actual !== want && Date.now() - (flow.get('wanted_ts') || 0) < 120000) {\n  out[2] = { payload: 'Enchufe informa ' + actual + ' pero se pidió ' + want };\n}\nreturn out;",
     "outputs": 3,
     "timeout": 0,
     "noerr": 0,

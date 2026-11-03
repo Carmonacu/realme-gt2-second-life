@@ -13,6 +13,18 @@ CHARGE_REPUBLISH_S=600      # re-envío periódico de charger/want (resync del e
 CHARGE_VERIFY_GRACE=300     # s con want≠realidad («plugged») antes de avisar
 CHARGE_FAILSAFE=ON          # publicado al parar el limitador (ON = seguir cargando, más seguro para un servidor)
 
+# --- Enchufe: quién lo conmuta ---
+# nodered (defecto): el limitador solo publica gt2/power/charger/want y el flujo Node-RED manda la orden.
+# openbeken | tasmota | shelly-gen2: el limitador habla DIRECTAMENTE con el enchufe por MQTT (Node-RED
+#   opcional). Usa solo uno de los dos caminos. ELIVCO LSPA9 con OpenBeken: docs/smart-plug-openbeken.md
+PLUG_BACKEND=nodered
+PLUG_TOPIC=lspa9            # OpenBeken: Config → MQTT → «Client Topic» · Tasmota: Topic · Shelly: prefijo MQTT
+PLUG_CHANNEL=1              # OpenBeken: canal del relé («Rel;N»): CB2S/BK7231N = 1 · LN882H (BSD342-2110) = 0
+PLUG_OBK_CMD=channel        # channel = lspa9/1/set 1|0 · power = cmnd/lspa9/POWER ON|OFF (primer relé)
+PLUG_READ_POWER=1           # tras cada orden lee W (lspa9/power/get) → gt2/power/charger/plug_power
+#PLUG_REPLY_WAIT=4
+#PLUG_POWER_WAIT=12
+
 # --- Guardián térmico (LLM) ---
 THERMAL_ENABLED=1
 THERMAL_HIGH_C=40           # ≥ 40 °C (THERMAL_SAMPLES lecturas seguidas) → acción
@@ -25,6 +37,8 @@ THERMAL_THREADS=2           # hilos en throttle; si el modelo ya usa ≤ 2 (Smol
 THERMAL_AUTO_RESTART=1      # tras stop, volver a «mode llm» al enfriar (solo si el modo sigue en llm)
 
 # --- MQTT (Mosquitto local del repo: 127.0.0.1:1883 anónimo) ---
+# Un enchufe en la Wi‑Fi necesita un listener en la IP LAN del móvil (ver docs/smart-plug-openbeken.md);
+# el limitador sigue usando 127.0.0.1 (+ usuario/contraseña si quitas allow_anonymous).
 POWER_MQTT_HOST=127.0.0.1
 POWER_MQTT_PORT=1883
 POWER_MQTT_PREFIX=gt2/power

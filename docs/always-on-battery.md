@@ -230,7 +230,8 @@ Requisitos: app **Termux:API** (F-Droid, misma firma que Termux) + `pkg install 
 | `charger/state` | móvil | JSON `{want, reason, mismatch_s, mqtt_ok, ts}` |
 | `limiter/status` · `limiter/heartbeat` | móvil | `online`/`offline` · epoch cada 60 s |
 | `thermal/state` | móvil | JSON del guardián térmico |
-| `charger/plug_state` | Node-RED | `ON` · `OFF` · `ERROR` · `UNCONFIRMED` · `DRYRUN-…` |
+| `charger/plug_state` | Node-RED (o el móvil con `PLUG_BACKEND`≠`nodered`) | `ON` · `OFF` · `ERROR` · `UNCONFIRMED` · `DRYRUN-…` |
+| `charger/plug_power` | móvil (`PLUG_BACKEND`≠`nodered`) | W medidos por el enchufe (si mide) |
 | `charger/alert` | Node-RED | JSON `{ts, msg, source}` → el móvil lo convierte en notificación |
 
 ### 9.4 Seguridad (nunca estado ambiguo)
@@ -243,7 +244,9 @@ Requisitos: app **Termux:API** (F-Droid, misma firma que Termux) + `pkg install 
 
 ### 9.5 Enchufe (marca desconocida → intercambiable)
 
-En Node-RED, pestaña **GT2 limitador de carga** → propiedades → *Environment*: `PLUG_TYPE` = `dry-run` | `tasmota-mqtt` | `tasmota-http` | `shelly-gen2-http` | `shelly-gen1-http` | `shelly-gen2-mqtt`, `PLUG_HOST` (IP para HTTP) y `PLUG_MQTT_TOPIC` (topic Tasmota o id Shelly). Para otra marca basta editar el `switch` del nodo *Adaptador enchufe* (una URL o un topic). Si el enchufe usa MQTT, debe apuntar al Mosquitto del móvil: el `mosquitto.conf` del repo escucha **solo en 127.0.0.1** → añade un `listener 1883 <IP-LAN>` con usuario/contraseña (y `POWER_MQTT_USER/PASS`) o usa la variante HTTP (más simple).
+**Enchufe elegido: ELIVCO LSPA9 con OpenBeken** → guía completa (variantes, cloudcutter/UART, plantillas, MQTT, calibración, pruebas): **[smart-plug-openbeken.md](smart-plug-openbeken.md)**. Con OpenBeken puedes saltarte Node-RED: `PLUG_BACKEND=openbeken`, `PLUG_TOPIC=lspa9`, `PLUG_CHANNEL=1` (LN882H: `0`) en `power.conf` y `charge-limiter` conmuta el enchufe directamente por MQTT (`charge-limiter plug state|power|on|off` para probar). También vale `tasmota` o `shelly-gen2` como backend directo.
+
+En Node-RED, pestaña **GT2 limitador de carga** → propiedades → *Environment*: `PLUG_TYPE` = `dry-run` | `openbeken-mqtt` | `tasmota-mqtt` | `tasmota-http` | `shelly-gen2-http` | `shelly-gen1-http` | `shelly-gen2-mqtt`, `PLUG_HOST` (IP para HTTP), `PLUG_MQTT_TOPIC` (topic Tasmota, id Shelly o Client Topic OpenBeken) y `PLUG_CHANNEL` (canal del relé OpenBeken). Para otra marca basta editar el `switch` del nodo *Adaptador enchufe* (una URL o un topic). Si el enchufe usa MQTT, debe apuntar al Mosquitto del móvil: el `mosquitto.conf` del repo escucha **solo en 127.0.0.1** → añade un `listener 1883 <IP-LAN>` con usuario/contraseña (ejemplo con `per_listener_settings` en [smart-plug-openbeken.md § 4](smart-plug-openbeken.md#mosquitto-del-móvil-escuchando-en-la-wi-fi)) o usa la variante HTTP (más simple).
 
 ### 9.6 Guardián térmico
 
@@ -285,4 +288,5 @@ Prueba térmica sin calentar el móvil: `THERMAL_HIGH_C=30 THERMAL_RESUME_C=29 t
 - [termux-llm-guide.md](termux-llm-guide.md) — servidor remoto, API key, Tailscale  
 - [termux-boot-services.md](termux-boot-services.md) — sshd (y LLM opt-in) tras reboot  
 - [service-modes-design.md](service-modes-design.md) — perfiles RAM (borrador)  
+- [smart-plug-openbeken.md](smart-plug-openbeken.md) — enchufe ELIVCO LSPA9 con OpenBeken para el limitador de carga  
 - [STATUS.md](STATUS.md) — qué está operativo hoy  
