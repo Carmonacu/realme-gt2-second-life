@@ -26,7 +26,7 @@ pkg update -y
 pkg upgrade -y
 
 echo "[2/6] Paquetes base (termux-tools incluye termux-wake-lock)..."
-pkg install -y termux-tools curl
+pkg install -y termux-tools curl jq termux-api
 
 echo "[3/6] Instalando llama.cpp b12017 (benchmarks del dispositivo)..."
 mkdir -p "${HOME}/opt/llama-b12017"
