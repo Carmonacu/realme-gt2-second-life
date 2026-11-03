@@ -1,0 +1,65 @@
+﻿START 2026-10-31T13:41:45+01:00
+model=/data/local/tmp/models/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf threads=2 ctx=4096 n=64
+temp_before=313
+=== mem before ===
+MemFree:         2325704 kB
+MemAvailable:    4376344 kB
+OMemFree:       16384 kB
+cli_pid=25142
+sample VmHWM=1292kB VmRSS=1188kB
+
+
+Loading model... |-\|/-\|/-sample VmHWM=69468kB VmRSS=64892kB
+\|/-\|/-\|/sample VmHWM=1234280kB VmRSS=1260520kB
+-\|/-\|/-\|sample VmHWM=2574916kB VmRSS=2584684kB
+/-\|/-\|/-\sample VmHWM=2953756kB VmRSS=2962468kB
+|/-\|/-\|/sample VmHWM=3359696kB VmRSS=3372104kB
+-\|/-\|/-\|sample VmHWM=3433332kB VmRSS=3242472kB
+/-\|/-\|/-\sample VmHWM=3626412kB VmRSS=3646060kB
+|/-\|/-\|/-sample VmHWM=4074064kB VmRSS=4079368kB
+\|/-\|/-\|/sample VmHWM=4208616kB VmRSS=4172104kB
+-\|/-\|/-\|sample VmHWM=4342912kB VmRSS=4341100kB
+/-\|/-\|/-\sample VmHWM=4371616kB VmRSS=4316112kB
+|/-\|/-\ sample VmHWM=4371616kB VmRSS=4320376kB
+
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b12017-5047748f1
+model      : /data/local/tmp/models/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf
+ftype      : Q4_K - Medium
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> Hola
+¡Hola! ¿Cómosample VmHWM=4371616kB VmRSS=4285464kB
+ puedo ayudarte hoy?sample VmHWM=4371616kB VmRSS=4217524kB
+
+
+[ Prompt: 9.0 t/s | Generation: 4.0 t/s ]
+
+> 
+
+Exiting...
+peak_VmHWM_kB=4371616
+=== mem after ===
+MemFree:         2802868 kB
+MemAvailable:    4720700 kB
+OMemFree:       16384 kB
+temp_after=312
+cli_exit=0
+BENCH_DONE 2026-10-31T13:42:01+01:00

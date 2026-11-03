@@ -1,0 +1,10 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -e
+for d in "$HOME/bin" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; do
+  [[ -f "$d/kali-common.sh" ]] && source "$d/kali-common.sh" && break
+done
+kali_guard_start 0 || exit 1
+echo "[*] apt update + full-upgrade en Kali (root)..."
+kali_nh -r "DEBIAN_FRONTEND=noninteractive apt update && apt full-upgrade -y"
+echo "[*] Tamaño rootfs:"
+du -sh "$KALI_CHROOT" 2>/dev/null || true

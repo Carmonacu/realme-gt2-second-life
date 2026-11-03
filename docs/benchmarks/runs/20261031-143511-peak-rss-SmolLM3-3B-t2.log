@@ -1,0 +1,91 @@
+﻿START 2026-10-31T14:35:09+01:00
+model=/data/local/tmp/models/HuggingFaceTB_SmolLM3-3B-Q4_K_M.gguf threads=2 ctx=4096 n=64
+temp_before=329
+=== mem before ===
+MemFree:         1194388 kB
+MemAvailable:    4441400 kB
+OMemFree:       16384 kB
+cli_pid=29493
+sample VmHWM=1276kB VmRSS=1132kB
+
+
+Loading model... |-\|/-\|/-sample VmHWM=93756kB VmRSS=101692kB
+\|/-\|/-\|/sample VmHWM=1565136kB VmRSS=1591696kB
+-\|/-\|/-\|sample VmHWM=2107952kB VmRSS=2095480kB
+/-\|/-\|/-sample VmHWM=2482540kB VmRSS=2494156kB
+\|/-\|/-\|/sample VmHWM=2848240kB VmRSS=2857216kB
+-\|/-\|/-\|sample VmHWM=3113184kB VmRSS=3102872kB
+/-\|/-\|/-\sample VmHWM=3243580kB VmRSS=3256080kB
+|/-\|/-\|/-sample VmHWM=3799924kB VmRSS=3815500kB
+\|/-\|/-\| sample VmHWM=4080332kB VmRSS=4080596kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+sample VmHWM=4113232kB VmRSS=4113232kB
+
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b12017-5047748f1
+model      : /data/local/tmp/models/HuggingFaceTB_SmolLM3-3B-Q4_K_M.gguf
+ftype      : Q4_K - Medium
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> Hola
+
+[Start thinking]
+
+
+Okay, the usersample VmHWM=4114888kB VmRSS=4114884kB
+ just said "Hola". Thatsample VmHWM=4114956kB VmRSS=4114908kB
+'s Spanish for "Hello".sample VmHWM=4114956kB VmRSS=4114924kB
+ I should respond in Spanish since thesample VmHWM=4114956kB VmRSS=4114928kB
+ greeting is in Spanish. Letsample VmHWM=4115100kB VmRSS=4115096kB
+ me think of a friendly andsample VmHWM=4115104kB VmRSS=4115092kB
+ welcoming response. Maybe something like "sample VmHWM=4115104kB VmRSS=4115096kB
+¡Hola! ¿En quésample VmHWM=4115104kB VmRSS=4115100kB
+ puedo ayudarte hoy?" whichsample VmHWM=4115104kB VmRSS=4115100kB
+ means "Hello! How can Isample VmHWM=4115108kB VmRSS=4115104kB
+ help
+
+[ Prompt: 13.2 t/s | Generation: 5.9 t/s ]
+
+> 
+
+Exiting...
+peak_VmHWM_kB=4115108
+=== mem after ===
+MemFree:         2441004 kB
+MemAvailable:    4437520 kB
+OMemFree:       16384 kB
+temp_after=328
+cli_exit=0
+BENCH_DONE 2026-10-31T14:35:50+01:00

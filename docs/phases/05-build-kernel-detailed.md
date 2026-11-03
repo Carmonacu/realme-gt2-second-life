@@ -37,7 +37,7 @@ Use the **same kernel branch/tag** your installed ROM was built from (PixelOS 16
 **Do not clone yet** if you are only scaffolding — run the clone script with `CONFIRM=1` when ready:
 
 ```bash
-cd /mnt/c/Users/carmo/Desktop/Proyects/nethunter-realme-gt2-porsche/scripts/wsl
+cd /mnt/c/Users/<you>/Desktop/Proyects/realme-gt2-second-life/scripts/wsl
 ROM=lineage KERNEL_DIR=~/android/kernel CONFIRM=1 ./clone-kernel-tree.sh
 ```
 
@@ -81,7 +81,7 @@ cd "$KERNEL_DIR"
 git clone https://gitlab.com/kalilinux/nethunter/build-scripts/kali-nethunter-kernel-builder.git
 cp kali-nethunter-kernel-builder/config local.config   # if no example yet
 # Prefer project template:
-cp /mnt/c/Users/carmo/Desktop/Proyects/nethunter-realme-gt2-porsche/scripts/wsl/local.config.example local.config
+cp /mnt/c/Users/<you>/Desktop/Proyects/realme-gt2-second-life/scripts/wsl/local.config.example local.config
 ```
 
 Edit `local.config`:

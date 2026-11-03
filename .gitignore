@@ -26,6 +26,7 @@ backup_porsche/*
 !backup_porsche/.gitkeep
 downloads/*
 !downloads/.gitkeep
+!downloads/README.md
 
 # Build artifacts
 *.o

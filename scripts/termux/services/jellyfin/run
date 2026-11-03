@@ -1,0 +1,7 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Runit: Jellyfin (paquete jellyfin-server). DOTNET_ROOT requerido en Termux (runtime en $PREFIX/lib/dotnet).
+export DOTNET_ROOT="${PREFIX}/lib/dotnet"
+export PATH="${PREFIX}/bin:${PATH}"
+exec "${PREFIX}/bin/jellyfin" \
+  --datadir "${HOME}/.local/share/jellyfin" \
+  --configdir "${HOME}/.config/jellyfin" 2>&1

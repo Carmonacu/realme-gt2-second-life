@@ -1,0 +1,145 @@
+﻿=== phone-tuning snapshot 20261031-154629 ===
+MemAvailable:    3875852 kB
+SwapTotal:       7864316 kB
+SwapFree:        6930952 kB
+Applications Memory Usage (in Kilobytes):
+Uptime: 1235391 Realtime: 1235391
+
+
+Total RSS by process:
+    559,920K: system (pid 2214)
+    281,376K: com.android.systemui (pid 3691)
+    272,420K: com.google.android.inputmethod.latin (pid 5677)
+    264,644K: com.google.android.gms (pid 4734)
+    252,240K: com.coloros.phonemanager (pid 14790)
+    242,488K: com.google.android.gms.ui (pid 13564)
+    224,380K: com.android.launcher (pid 4133 / activities)
+    222,088K: com.android.vending (pid 14703)
+    208,436K: com.android.settings (pid 10298)
+    201,184K: com.termux (pid 6142 / activities)
+    194,008K: com.google.android.apps.messaging (pid 11626)
+    174,884K: com.android.vending:background (pid 15081)
+    155,172K: com.google.android.apps.photos (pid 14565)
+    141,496K: com.google.android.googlequicksearchbox:search (pid 11843)
+    139,512K: com.oplus.camera (pid 13417)
+    125,428K: com.android.phone (pid 3896)
+    124,876K: com.heytap.pictorial (pid 13754)
+    123,852K: com.google.android.apps.nbu.files (pid 14566)
+    120,424K: com.google.android.googlequicksearchbox:googleapp (pid 5471)
+    116,372K: com.oplus.cosa (pid 14801)
+    114,580K: com.google.android.projection.gearhead:projection (pid 13666)
+    109,208K: com.heytap.htms (pid 14951)
+    108,600K: com.oplus.aiunit (pid 15364)
+    108,600K: com.heytap.htms:cloudctrl (pid 14897)
+    107,512K: com.android.settings.intelligence (pid 13264)
+    105,048K: com.google.android.permissioncontroller (pid 13197)
+    104,568K: com.facebook.appmanager (pid 14396)
+    104,452K: com.coloros.colordirectservice (pid 13538)
+    103,520K: com.oplus.pantanal.ums (pid 5302)
+    100,576K: com.oplus.rom (pid 13525)
+    100,572K: com.oplus.securitypermission (pid 15050)
+     98,364K: com.oplus.deepthinker:worker (pid 15073)
+     98,284K: com.oplus.notificationmanager (pid 15063)
+     96,312K: com.oplus.aod (pid 13781)
+     95,660K: com.heytap.mcs.appservice (pid 15021)
+--- pm list packages -d ---
+package:com.google.android.gms.supervision
+package:com.oplus.customize.coreapp
+package:com.android.devicelockcontroller
+--- pm list packages -e (first 80) ---
+package:com.oplus.framework_bluetooth.overlay
+package:com.oplus.pscanvas
+package:com.oplus.atlas
+package:com.google.android.overlay.modules.permissioncontroller.forframework
+package:com.coloros.ocs.opencapabilityservice
+package:com.coloros.backuprestore
+package:com.android.email.partnerprovider
+package:com.android.carrierconfig.overlay
+package:com.rongcard.eidapi
+package:com.qualcomm.qti.cne
+package:com.android.systemui.accessibility.accessibilitymenu
+package:com.android.providers.contacts
+package:com.google.android.apps.nbu.files
+package:com.qualcomm.uimremoteserver
+package:com.oplus.systemui.plugins
+package:andes.oplus.documentsreader
+package:com.oplus.cosa
+package:com.android.companiondevicemanager
+package:com.android.cts.priv.ctsshim
+package:com.termux
+package:com.android.providers.downloads
+package:com.android.bluetoothmidiservice
+package:com.facebook.appmanager
+package:com.android.credentialmanager
+package:com.oplus.cota
+package:com.google.android.printservice.recommendation
+package:com.google.android.captiveportallogin
+package:com.google.android.networkstack
+package:com.android.keychain
+package:com.google.android.accessibility.switchaccess
+package:com.google.android.overlay.gmsconfig.asi
+package:android.frameworkres.overlay.Network
+package:com.oplus.subsys.plugin
+package:com.android.shell
+package:com.oplus.lfeh
+package:com.google.android.wifi.dialog
+package:com.coloros.weather2
+package:com.google.android.ondevicepersonalization.services
+package:com.google.android.overlay.modules.healthfitness.forframework
+package:com.android.bookmarkprovider
+package:com.oplus.keyguard.clock.magazine
+package:com.oplus.themestore
+package:com.android.DeviceAsWebcam
+package:com.google.android.wifi.resources.overlay.target
+package:com.android.sharedstoragebackup
+package:com.oplus.dmp
+package:com.qualcomm.qti.uimGbaApp
+package:com.android.providers.media
+package:com.android.providers.calendar
+package:com.android.providers.blockednumber
+package:com.google.android.documentsui
+package:com.android.statementservice
+package:com.android.bluetooth.oplus.overlay
+package:com.android.proxyhandler
+package:com.google.android.overlay.modules.permissioncontroller
+package:com.coloros.phonemanager
+package:com.oplus.nas
+package:com.google.android.gms.location.history
+package:com.oplus.trafficmonitor
+package:com.google.android.apps.googleassistant
+package:com.qualcomm.location
+package:com.google.android.gm
+package:com.oplus.blur
+package:com.android.carrierdefaultapp
+package:com.coloros.activation
+package:com.android.backupconfirm
+package:com.google.android.apps.tachyon
+package:com.google.android.hotspot2.osulogin
+package:com.oplus.healthservice
+package:com.realme.smartdrive
+package:com.android.mtp
+package:com.oplus.portrait
+package:com.oplus.appplatform
+package:com.android.safetycenter.resources.overlay
+package:com.heytap.accessory
+package:com.android.theme.font.notoserifsource
+package:com.qualcomm.qti.remoteSimlockAuth
+package:com.oplus.linker
+package:com.oplus.notificationmanager
+package:com.heytap.pictorial
+--- pm list packages -3 ---
+package:com.tailscale.ipn
+package:org.fdroid.fdroid
+package:com.amazon.appmanager
+package:andes.oplus.documentsreader
+package:com.google.android.apps.tachyon
+package:com.google.android.apps.youtube.music
+package:com.brave.browser
+package:com.oneplus.brickmode
+package:com.coloros.backuprestore
+package:com.termux
+package:com.google.android.apps.docs
+package:com.coloros.note
+package:com.google.android.apps.chromecast.app
+package:com.google.android.apps.podcasts
+package:com.google.android.apps.subscriptions.red

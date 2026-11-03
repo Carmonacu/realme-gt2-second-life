@@ -25,7 +25,7 @@ wsl -d Ubuntu
 From WSL (or `wsl -d Ubuntu -- bash ...`):
 
 ```bash
-bash /mnt/c/Users/carmo/Desktop/Proyects/nethunter-realme-gt2-porsche/scripts/wsl/verify-wsl.sh
+bash /mnt/c/Users/<you>/Desktop/Proyects/realme-gt2-second-life/scripts/wsl/verify-wsl.sh
 ```
 
 The script exits non-zero if the environment is not WSL2. It prints `df` for `$HOME` and `/` so you can confirm free space.
@@ -35,11 +35,20 @@ The script exits non-zero if the environment is not WSL2. It prints `df` for `$H
 Run once on a fresh Ubuntu WSL instance:
 
 ```bash
-cd /mnt/c/Users/carmo/Desktop/Proyects/nethunter-realme-gt2-porsche
+cd /mnt/c/Users/<you>/Desktop/Proyects/realme-gt2-second-life
 bash scripts/wsl/setup-build-env.sh --help
 bash scripts/wsl/setup-build-env.sh --dry-run   # preview only
-bash scripts/wsl/setup-build-env.sh             # installs via apt
+bash scripts/wsl/setup-build-env.sh             # installs via apt (interactive sudo)
+bash scripts/wsl/verify-wsl.sh --require-toolchain
 ```
+
+From **Windows** (opens a new Ubuntu tab/window — **paste** the two `bash` lines the script prints; `wsl -e bash -c` cannot prompt for sudo):
+
+```powershell
+.\scripts\windows\start-wsl-build-setup.ps1
+```
+
+Automated/CI runs without passwordless sudo **exit immediately** with instructions (verified 2026-10-30: `sudo -n true` fails on this host).
 
 **Do not** run a full `apt upgrade` unless you intentionally maintain the distro; the setup script only installs the listed build dependencies.
 
@@ -61,6 +70,6 @@ Keep large trees under the WSL home directory (`~/...`) for performance, not und
 
 ## Next steps
 
-1. Run `verify-wsl.sh` after setup.
-2. Clone kali-nethunter-kernel-builder and vendor/device kernel sources per project docs.
-3. Proceed to Phase 1 kernel configuration and build scripts in this repository.
+1. Run `verify-wsl.sh --require-toolchain` after setup.
+2. Clone kali-nethunter-kernel-builder and vendor/device kernel sources per project docs (Phase 5).
+3. Proceed to custom ROM on device (Phase 4) before first kernel flash tests.

@@ -1,0 +1,33 @@
+﻿START 2026-10-31T14:40:03+01:00
+model=/data/local/tmp/models/HuggingFaceTB_SmolLM3-3B-Q4_K_M.gguf threads=2 duration=300s
+temp_before=316
+=== run=1 elapsed=0s temp=316 ===
+load_backend: loaded RPC backend from /data/local/tmp/llama/libggml-rpc.so
+load_backend: loaded CPU backend from /data/local/tmp/llama/libggml-cpu-android_armv8.2_2.so
+| model                          |       size |     params | backend    | threads |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | ------: | --------------: | -------------------: |
+| smollm3 3B Q4_K - Medium       |   1.78 GiB |     3.08 B | CPU        |       2 |           pp512 |         12.08 ± 0.00 |
+| smollm3 3B Q4_K - Medium       |   1.78 GiB |     3.08 B | CPU        |       2 |           tg128 |          5.49 ± 0.00 |
+
+build: 5047748f1 (12017)
+=== run=2 elapsed=116s temp=318 ===
+load_backend: loaded RPC backend from /data/local/tmp/llama/libggml-rpc.so
+load_backend: loaded CPU backend from /data/local/tmp/llama/libggml-cpu-android_armv8.2_2.so
+| model                          |       size |     params | backend    | threads |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | ------: | --------------: | -------------------: |
+| smollm3 3B Q4_K - Medium       |   1.78 GiB |     3.08 B | CPU        |       2 |           pp512 |         12.99 ± 0.00 |
+| smollm3 3B Q4_K - Medium       |   1.78 GiB |     3.08 B | CPU        |       2 |           tg128 |          6.28 ± 0.00 |
+
+build: 5047748f1 (12017)
+=== run=3 elapsed=222s temp=322 ===
+load_backend: loaded RPC backend from /data/local/tmp/llama/libggml-rpc.so
+load_backend: loaded CPU backend from /data/local/tmp/llama/libggml-cpu-android_armv8.2_2.so
+| model                          |       size |     params | backend    | threads |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | ------: | --------------: | -------------------: |
+| smollm3 3B Q4_K - Medium       |   1.78 GiB |     3.08 B | CPU        |       2 |           pp512 |         13.04 ± 0.00 |
+| smollm3 3B Q4_K - Medium       |   1.78 GiB |     3.08 B | CPU        |       2 |           tg128 |          6.25 ± 0.00 |
+
+build: 5047748f1 (12017)
+temp_after=325
+total_runs=3
+BENCH_DONE 2026-10-31T14:45:31+01:00

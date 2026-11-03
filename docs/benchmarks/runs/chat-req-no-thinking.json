@@ -1,0 +1,1 @@
+{"model":"x","messages":[{"role":"user","content":"Hola, qué tal?"}],"max_tokens":64,"chat_template_kwargs":{"enable_thinking":false}}

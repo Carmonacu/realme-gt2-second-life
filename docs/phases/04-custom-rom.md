@@ -12,6 +12,23 @@
 - [ ] Install Magisk on custom ROM boot image; confirm root.
 - [ ] Snapshot current ROM + kernel version in this repo (notes or issue).
 
+## Repo helpers
+
+```powershell
+# ROM zip under downloads/ before sideload
+.\scripts\windows\verify-downloads.ps1
+.\scripts\windows\list-fastboot-devices.ps1
+```
+
+```powershell
+# Recovery sideload (device in sideload mode)
+adb sideload downloads\<your-rom>.zip
+```
+
+After ROM stable, note **lineage** vs **pixelos** for Phase 5 clone script.
+
+Gate to Phase 5: [PHASE-GATES.md](../PHASE-GATES.md) **4 → 5**.
+
 ## Notes
 
 - PixelOS builds may ship modem firmware from other regions — EU `modem.img` is the standard fix.

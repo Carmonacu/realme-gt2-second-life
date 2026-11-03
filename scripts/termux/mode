@@ -1,0 +1,131 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Perfiles de servicio mutuamente excluyentes (Plan B v1).
+# Uso: mode status | llm | idle | pentest | media | light-stack | lab | apply <modo>
+
+set -euo pipefail
+export PATH="${HOME}/bin:${PREFIX}/bin:${PATH}"
+
+LIB=""
+for d in "$HOME/bin" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; do
+  if [[ -f "$d/mode-lib.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "$d/mode-lib.sh"
+    LIB=1
+    break
+  fi
+done
+[[ -n "$LIB" ]] || { echo "Error: falta mode-lib.sh en ~/bin" >&2; exit 1; }
+
+usage() {
+  cat <<'EOF'
+Uso: mode <comando>
+
+Comandos:
+  status              Modo actual, RAM y procesos pesados
+  llm                 Para media/lab; arranca SmolLM3 (llm smol vía nohup)
+  idle                Todo lo pesado off
+  pentest [--shell]   Para LLM; prepara Kali (sin kali --force)
+  media               Jellyfin on, LLM off
+  light-stack         mosquitto + node-red (+ syncthing si existe)
+  lab                 LLM off; udocker manual (sin QEMU auto)
+  apply <modo>        Igual que el subcomando (p. ej. boot)
+
+Variables:
+  TERMUX_DEFAULT_MODE   idle | llm (boot; ver install-boot-services.sh)
+
+Ejemplos:
+  mode status
+  mode llm
+  ssh phone mode pentest --shell
+EOF
+}
+
+mode_with_lock() {
+  local fn="$1"
+  shift
+  if command -v flock >/dev/null 2>&1; then
+    mkdir -p "$(dirname "$MODE_LOCK_FILE")"
+    exec 9>"$MODE_LOCK_FILE"
+    if ! flock -n 9; then
+      echo "Error: otra transición de modo en curso (flock $MODE_LOCK_FILE)." >&2
+      exit 1
+    fi
+  fi
+  "$fn" "$@"
+}
+
+cmd_status() {
+  mode_show_status
+}
+
+cmd_apply() {
+  local target="${1:-}"
+  [[ -n "$target" ]] || { usage >&2; exit 1; }
+  mode_apply_unlocked "$target"
+}
+
+cmd_pentest() {
+  local enter_shell=0
+  for a in "$@"; do
+    case "$a" in
+      --shell|-s) enter_shell=1 ;;
+      *) echo "Opción desconocida: $a" >&2; exit 1 ;;
+    esac
+  done
+
+  mode_apply_unlocked pentest || exit 1
+
+  # Kali sin --force (nunca silencioso)
+  KALI_BIN="$HOME/bin/kali"
+  [[ -x "$KALI_BIN" ]] || KALI_BIN="kali"
+  for d in "$HOME/bin"; do
+    if [[ -f "$d/kali-common.sh" ]]; then
+      # shellcheck source=/dev/null
+      source "$d/kali-common.sh"
+      break
+    fi
+  done
+  if [[ -z "${KALI_CHROOT:-}" ]]; then
+    echo "Modo pentest listo. Ejecuta: kali" >&2
+    exit 0
+  fi
+  kali_guard_start 0 || {
+    echo "Kali bloqueado — revisa RAM o llama-server." >&2
+    exit 1
+  }
+  if [[ "$enter_shell" == "1" ]]; then
+    kali_nh
+  else
+    echo "Listo. Entra con: kali   (o mode pentest --shell)"
+  fi
+}
+
+main_unlocked() {
+  local cmd="${1:-status}"
+  shift || true
+  case "$cmd" in
+    status) cmd_status ;;
+    apply) cmd_apply "$@" ;;
+    llm|idle|media|light-stack|lab)
+      mode_apply_unlocked "$cmd"
+      ;;
+    pentest) cmd_pentest "$@" ;;
+    help|-h|--help) usage ;;
+    *)
+      echo "Comando desconocido: $cmd" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+}
+
+main() {
+  local cmd="${1:-status}"
+  if [[ "$cmd" == "status" || "$cmd" == "help" || "$cmd" == "-h" || "$cmd" == "--help" ]]; then
+    main_unlocked "$@"
+  else
+    mode_with_lock main_unlocked "$@"
+  fi
+}
+
+main "$@"

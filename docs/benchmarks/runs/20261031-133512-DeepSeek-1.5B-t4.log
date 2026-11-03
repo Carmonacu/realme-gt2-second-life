@@ -1,0 +1,15 @@
+﻿START 2026-10-31T13:35:11+01:00
+model=/data/local/tmp/models/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf threads=4
+temp_before=323
+MemAvailable:    4321148 kB
+load_backend: loaded RPC backend from /data/local/tmp/llama/libggml-rpc.so
+load_backend: loaded CPU backend from /data/local/tmp/llama/libggml-cpu-android_armv8.2_2.so
+| model                          |       size |     params | backend    | threads |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | ------: | --------------: | -------------------: |
+| qwen2 1.5B Q4_K - Medium       |   1.04 GiB |     1.78 B | CPU        |       4 |           pp512 |         23.14 ± 0.09 |
+| qwen2 1.5B Q4_K - Medium       |   1.04 GiB |     1.78 B | CPU        |       4 |           tg128 |         12.57 ± 0.24 |
+
+build: 5047748f1 (12017)
+temp_after=323
+bench_exit=0
+BENCH_DONE 2026-10-31T13:37:14+01:00

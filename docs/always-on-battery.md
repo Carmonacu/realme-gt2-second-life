@@ -1,0 +1,202 @@
+# Always-on 24/7 + batería — Realme GT 2 (RMX3311), ColorOS 15, Plan B (Termux)
+
+**Fecha:** 2026-10-31  
+**Contexto:** Bootloader **bloqueado**, rol habitual **LLM local** + SSH/Tailscale; sin pruebas de laboratorio de ciclos de carga en este repo — solo **buenas prácticas** alineadas con [phone-tuning.md](phone-tuning.md), [second-life-ecosystem.md](second-life-ecosystem.md) y patrones comunitarios citados allí.  
+**Estado Plan B:** [STATUS.md](STATUS.md).
+
+---
+
+## Resumen ejecutivo
+
+| Tema | Conclusión |
+|------|------------|
+| **¿24/7 enchufado?** | **Parcialmente viable** como mini-servidor si aceptas **desgaste acelerado** de la batería y vigilas **hinchazón** / calor. |
+| **ColorOS** | Exenciones Termux/Tailscale + **carga inteligente** / límite **80–90%** cuando exista; ver [phone-tuning.md § A y § Carga 24/7](phone-tuning.md). |
+| **Wake-lock** | `termux-wake-lock` (scripts `llm`, `kali`, bootstrap) evita suspensión agresiva; **no** sustituye ventilación ni política de un solo servicio pesado. |
+| **Térmica** | SD888 + LLM sostenido: sensores **~38–44 °C** bajo carga (medido en sesión LLM); batería ~**32 °C** en reposo enchufado al 100%. |
+| **Cuándo NO** | Verano sin disipación, batería ya hinchada, modo ahorro activo, o intentar **dos** cargas pesadas a la vez — ver [phone-tuning.md § E](phone-tuning.md#e-mantener-el-rol-principal-política-operativa). |
+
+---
+
+## 1. Enchufado continuo (24/7)
+
+### 1.1 Qué significa en este proyecto
+
+Patrón comunitario (Termux + SSH + Tailscale + servidor ligero): el teléfono actúa como **nodo always-on** en casa, enchufado, con **Termux** en primer plano o con notificación persistente y servicios ligeros en paralelo. Este repo ya opera **llama-server**, **sshd** y **Tailscale** bajo ese modelo; ver matriz en [second-life-ecosystem.md §3](second-life-ecosystem.md).
+
+**No confundir** «always-on» con «todo encendido a la vez»: en **8 GB RAM** solo debe haber **un** servicio **pesado** de CPU/RAM activo (LLM **o** transcode Jellyfin **o** Metasploit masivo). Detalle operativo: [phone-tuning.md § E — Mantener el rol principal](phone-tuning.md#e-mantener-el-rol-principal-política-operativa).
+
+### 1.2 Hardware de carga
+
+- Usar **cargador y cable de calidad** (preferible el original o equivalente certificado **USB-PD** del GT2). Cable flojo = calor en el conector.
+- **Evitar** fundas gruesas o móvil bajo cojín/manta mientras corre LLM o escaneos Kali largos.
+- Colocar el teléfono en superficie **rígida y ventilada** (no cama acolchada 24/7).
+- Si el puerto USB falla intermitente, **deja de usar 24/7** hasta revisar el conector (riesgo de arco/calor local).
+
+### 1.3 Red y acceso remoto
+
+- **Tailscale (app Android)** es el acceso remoto preferido — ya en whitelist Doze; ver [phone-tuning.md § Tailscale](phone-tuning.md).
+- No hace falta mantener la pantalla encendida; sí conviene **bloquear Termux en recientes** y notificación de Termux visible cuando corre el servidor.
+
+---
+
+## 2. Degradación de batería e hinchazón
+
+### 2.1 Mecanismo (sin alarmismo, con criterio)
+
+Las baterías Li-ion **envejecen más rápido** con:
+
+- Tiempo prolongado al **100%** y alta temperatura (**tropicalización** del electrodo).
+- Ciclos parciales repetidos **caliente** (típico de carga + CPU sostenida).
+- Estrés mecánico si la celda **hincha** (gas interno) — **riesgo de seguridad**.
+
+Convertir un GT2 en servidor 24/7 **no es gratis**: es intercambiar **vida útil de batería** por utilidad de laboratorio. Comunidad Termux / «old phone server» ([XDA 2026](https://www.xda-developers.com/old-android-phone-linux-server-handles-more-expected/), [second-life-ecosystem.md §1.3](second-life-ecosystem.md)) asume teléfonos **de segunda vida** o con batería **reemplazable / ya amortizada**.
+
+### 2.2 Señales de parar **de inmediato**
+
+| Señal | Acción |
+|-------|--------|
+| **Carcasa trasera levantada**, marco torcido, pantalla «empujada» | **Apagar**, dejar de cargar, no usar como servidor; sustituir batería en servicio autorizado. |
+| Olor a quemado, calor extremo en mano **sin** carga CPU | Igual — no continuar 24/7. |
+| Carga que **sube/baja** de forma errática o reinicios en bucle enchufado | Revisar cable/cargador; si persiste, batería o PMIC — no forzar servidor. |
+| **Swollen battery** visible en fotos de desmontaje (no documentado en este dispositivo) | No reutilizar como nodo enchufado permanente. |
+
+### 2.3 Mitigaciones (ColorOS + hábito)
+
+1. **Carga inteligente / optimizada** y, si la ROM lo ofrece, **protección de carga** o tope **80–90%** para uso enchufado largo — rutas de menú en [phone-tuning.md § Carga 24/7](phone-tuning.md).
+2. Si **no** hay límite de SOC: valorar desenchufar unas horas al día (p. ej. ventana nocturna con batería suficiente solo para alarmas) — **no verificado** en este repo como automatismo; es política manual.
+3. Evitar **modo ahorro de energía** del sistema mientras Termux sirve LLM (puede congelar procesos hijos); ver [rootless-kali.md — ColorOS stability](rootless-kali.md).
+4. Monitorizar ocasionalmente con adb (opcional): `dumpsys battery` — nivel, `temperature` ( décimas °C ), estado `status=2` (charging) vs `5` (full).
+
+**Medición puntual en este teléfono (adb, carga USB, sesión documentada en phone-tuning):** nivel **100%**, `temperature` **320** (~**32 °C** celda), sensores térmicos hasta **~44 °C** bajo **carga sostenida** de CPU — no es un test de meses de degradación.
+
+---
+
+## 3. Ajustes ColorOS 15 (batería, Doze, Termux)
+
+La base **verificada por adb** está en [phone-tuning.md § A](phone-tuning.md):
+
+- Termux en **whitelist Doze** (`dumpsys deviceidle whitelist`).
+- AppOps: `RUN_ANY_IN_BACKGROUND` **allow**, `WAKE_LOCK` **allow**, `START_FOREGROUND` **allow**.
+- **Phantom processes:** cap elevado + monitor desactivado (sesión 2026-10-31) — reversible; mismas órdenes en phone-tuning.
+- **Opciones desarrollador:** **Desactivar restricciones de procesos hijo** (crítico para `llama-server` y proot Kali).
+
+### 3.1 UI manual (Realme / ColorOS)
+
+Complemento a lo anterior — revisar tras cada actualización OTA:
+
+| Área | Qué hacer |
+|------|-----------|
+| **Termux** | Ajustes → Batería → Gestión por app → **autoarranque**, actividad en segundo plano, **sin optimización estricta**; no **congelar** en multitarea. |
+| **Tailscale** | Igual; app en whitelist Doze (adb ya aplicado en repo). |
+| **Modo ahorro** | **Desactivado** durante servidor LLM o escaneos largos. |
+| **Expansión RAM 8 GB** | Aumenta **swap en flash** (~7,5 GiB visibles) — útil para multitarea Android, **malo** para KV cache LLM bajo presión; ver phone-tuning § RAM. |
+
+Referencias OEM agresivos con apps en segundo plano: [dontkillmyapp.com/realme](https://dontkillmyapp.com/realme), guías citadas en [rootless-kali.md](rootless-kali.md).
+
+### 3.2 Termux:Boot y fiabilidad tras reinicio
+
+Para 24/7 **después de reboot**, instala arranque automático con **[termux-boot-services.md](termux-boot-services.md)** (`install-boot-services.sh`: **sshd** vía runit; **LLM al boot** solo con `--enable-llama-smol`). Sin eso, un reinicio deja SSH/LLM **parados** hasta abrir Termux o ejecutar bootstrap manualmente.
+
+Tras OTA ColorOS, re-verifica exenciones de batería para **Termux** y **Termux:Boot** (F-Droid, misma firma que Termux).
+
+---
+
+## 4. `termux-wake-lock` — cuándo y cómo
+
+### 4.1 Qué hace
+
+Mantiene el dispositivo **despierto** a nivel Android (partial wake lock vía servicio Termux), reduciendo suspensión profunda que mata hijos (`llama-server`, `proot`, `nmap` largos).
+
+**Incluido en `termux-tools`** — no requiere Termux:API para el binario básico; ver [termux-llm-guide.md](termux-llm-guide.md).
+
+### 4.2 Uso en este repo
+
+| Momento | Comando / comportamiento |
+|---------|---------------------------|
+| Arrancar LLM | `llm smol` / `llm smol --remote` → `llm-common.sh` llama **`termux-wake-lock`** si existe |
+| SSH bootstrap | `ssh-setup.sh` intenta wake-lock al configurar |
+| Kali / escaneos | **`termux-wake-lock`** manual antes de `kali` o jobs largos — [rootless-kali.md](rootless-kali.md) |
+| Notificación Termux | Opción **Acquire wakelock** si aparece en la UI |
+
+Liberar al parar trabajo pesado (opcional, ahorra batería si desenchufas):
+
+```bash
+termux-wake-unlock
+pkill -f llama-server   # si aplica
+```
+
+### 4.3 Límites
+
+- Wake-lock **no** evita **signal 9** por phantom procs sin los ajustes de phone-tuning.
+- **No** compensa **dos** servicios pesados simultáneos — solo mantiene el proceso vivo bajo Doze moderado.
+- Con pantalla apagada muchas horas, ColorOS puede seguir **reclasificando** apps; mantener Termux **bloqueado en recientes** y exenciones de batería.
+
+---
+
+## 5. Expectativas térmicas (SD888, 8 GB)
+
+| Escenario | Orden de magnitud (este dispositivo / docs repo) |
+|-----------|--------------------------------------------------|
+| Reposo enchufado, LLM parado | Batería ~**32 °C** (medición adb) |
+| LLM + inferencia, benchmarks | **~38 °C** ambiente chip — throttling **leve** posible ([phone-tuning.md § B](phone-tuning.md)) |
+| Carga CPU sostenida (servidor, escaneo) | Sensores hasta **~44 °C** (misma sesión 24/7 en phone-tuning) |
+| Verano / habitación >28 °C | Margen menor — **reducir** carga o apagar rol pesado |
+
+**Recomendación:** si `llama-server` o Kali calienten de forma constante **>45 °C** en sensores o el teléfono es incómodo al tacto, **pausar** el servicio pesado; no es un fallo de Termux, es límite físico del chasis fino del GT2.
+
+---
+
+## 6. Cuándo **NO** usar 24/7 enchufado
+
+| Situación | Por qué |
+|-----------|---------|
+| Batería **hinchada** o GT2 **único móvil diario** con batería ya débil | Riesgo seguridad / movilidad |
+| Sin **carga inteligente** ni posibilidad de limitar SOC, y no quieres aceptar desgaste | Mejor nodo Raspberry/NAS para always-on |
+| Quieres **Jellyfin transcode + LLM + Kali msf** a la vez | **8 GB** insuficiente; ver [phone-tuning.md § E](phone-tuning.md#e-mantener-el-rol-principal-política-operativa) |
+| **Modo ahorro** o Termux **congelado** sin revisar exenciones | Caídas silenciosas del servidor |
+| Entorno **sin ventilación** (armario cerrado, sol directo) | Acelera envejecimiento y riesgo térmico |
+| Tras **OTA ColorOS** sin re-verificar whitelist / phantom / hijos | Regresiones típicas OEM |
+| Dos cargas pesadas simultáneas | Ver [§ E phone-tuning](phone-tuning.md#e-mantener-el-rol-principal-política-operativa), no solo térmica |
+
+Alternativa documentada si necesitas NetHunter «de verdad» o menos compromiso con la batería: [alternative-devices.md](alternative-devices.md).
+
+---
+
+## 7. Convivencia — «Mantener el rol principal»
+
+Política operativa completa (prioridades, ejemplos do/don't): **[phone-tuning.md § E](phone-tuning.md#e-mantener-el-rol-principal-política-operativa)**.
+
+Resumen alineado con [second-life-ecosystem.md §3.1](second-life-ecosystem.md):
+
+1. **Un** servicio pesado: `llama-server` **o** transcodificación Jellyfin **o** Metasploit masivo / escaneos muy amplios.
+2. En paralelo **solo ligeros:** **sshd**, **Tailscale**, **syncthing**, **mosquitto** pequeño.
+3. **Kali:** con LLM **parado**; `kali --force` solo si aceptas RAM compartida — guardias en `kali-common.sh`.
+
+Always-on **no** significa «LLM 24/7 **y** pentest 24/7 **y** media server 24/7».
+
+---
+
+## 8. Checklist rápido (servidor enchufado)
+
+- [ ] Cargador/cable fiable; teléfono ventilado, sin funda gruesa en carga alta
+- [ ] ColorOS: carga inteligente / límite SOC si disponible ([phone-tuning](phone-tuning.md))
+- [ ] Termux + Tailscale: batería sin restricciones; Termux bloqueado en recientes
+- [ ] Developer: **Desactivar restricciones de procesos hijo**; phantom cap según phone-tuning
+- [ ] Doze whitelist Termux (y Tailscale) — verificado o re-aplicado tras OTA
+- [ ] Un solo rol **pesado** activo — [§ E phone-tuning](phone-tuning.md#e-mantener-el-rol-principal-política-operativa)
+- [ ] `termux-wake-lock` antes de jobs largos; parar LLM antes de Kali pesado
+- [ ] Revisión mensual: hinchazón, calor anómalo, autonomía si usas el móvil fuera de casa
+- [ ] (Opcional 24/7) Termux:Boot + `install-boot-services.sh` — [termux-boot-services.md](termux-boot-services.md)
+
+---
+
+## Referencias cruzadas
+
+- [phone-tuning.md](phone-tuning.md) — Doze, phantom, latencia, carga 24/7, rol principal  
+- [second-life-ecosystem.md](second-life-ecosystem.md) — matriz viabilidad, comunidad Termux servidor  
+- [rootless-kali.md](rootless-kali.md) — wake-lock en escaneos, Kali + LLM  
+- [termux-llm-guide.md](termux-llm-guide.md) — servidor remoto, API key, Tailscale  
+- [termux-boot-services.md](termux-boot-services.md) — sshd (y LLM opt-in) tras reboot  
+- [service-modes-design.md](service-modes-design.md) — perfiles RAM (borrador)  
+- [STATUS.md](STATUS.md) — qué está operativo hoy  

@@ -1,0 +1,15 @@
+﻿START 2026-10-31T13:00:20+01:00
+model=/data/local/tmp/models/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf threads=3
+temp_before=287
+MemAvailable:    4255568 kB
+load_backend: loaded RPC backend from /data/local/tmp/llama/libggml-rpc.so
+load_backend: loaded CPU backend from /data/local/tmp/llama/libggml-cpu-android_armv8.2_2.so
+| model                          |       size |     params | backend    | threads |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | ------: | --------------: | -------------------: |
+| phi3 3B Q4_K - Medium          |   2.31 GiB |     3.84 B | CPU        |       3 |           pp512 |          9.33 ± 0.14 |
+| phi3 3B Q4_K - Medium          |   2.31 GiB |     3.84 B | CPU        |       3 |           tg128 |          4.58 ± 0.02 |
+
+build: 5047748f1 (12017)
+temp_after=303
+bench_exit=0
+BENCH_DONE 2026-10-31T13:05:34+01:00

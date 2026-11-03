@@ -1,0 +1,35 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Limpieza media: stop → parciales .l2s / cola qBit → rutas → media-stack start
+# Uso: qbit-prune | qprune   (--no-start para no reiniciar servicios)
+set -euo pipefail
+export PATH="${HOME}/bin:${PREFIX}/bin:${PATH}"
+
+NO_START=0
+[[ "${1:-}" == "--no-start" ]] && NO_START=1
+
+PRUNE="${HOME}/bin/qbit-prune-orphans.sh"
+ENSURE="${HOME}/bin/qbit-ensure-config.sh"
+
+for f in "$PRUNE" "$ENSURE"; do
+  [[ -x "$f" ]] || {
+    echo "Falta $f — ejecuta install-media-arr-stack.sh o copia scripts/termux a ~/bin/" >&2
+    exit 1
+  }
+done
+
+echo "==> Parando media-stack..."
+media-stack stop 2>/dev/null || pkill -f qbittorrent-nox 2>/dev/null || true
+sleep 1
+
+bash "$PRUNE"
+bash "$ENSURE"
+
+echo "==> Almacenamiento:"
+df -h /storage/emulated/0 | tail -1
+
+if [[ "$NO_START" -eq 0 ]]; then
+  echo "==> Reiniciando media-stack..."
+  media-stack start
+else
+  echo "==> Sin reinicio (--no-start). Cuando quieras: media-stack start"
+fi

@@ -1,0 +1,146 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# qBittorrent (Termux) + *Arr* (proot Ubuntu). Ver docs/media-stack-phone.md
+set -euo pipefail
+export PATH="${HOME}/bin:${PREFIX}/bin:${PATH}"
+
+if [[ -f "${HOME}/bin/mode-lib.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "${HOME}/bin/mode-lib.sh"
+fi
+
+MEDIA_ARR="${HOME}/media-arr"
+QBIT_PROFILE="${MEDIA_ARR}/config/qbittorrent"
+QBIT_WEB_PORT="${QBIT_WEB_PORT:-8090}"
+QBIT_LOG="${MEDIA_ARR}/log/qbittorrent-nox.log"
+
+usage() {
+  cat <<EOF
+Uso: media-stack {start|stop|status}
+
+  start   qBittorrent-nox + *Arr* + FlareSolverr (proot; MEDIA_FLARESOLVERR=0 para omitir FS)
+  stop    Para qBit, *Arr* y FlareSolverr (no para Jellyfin)
+  status  Procesos y puertos locales
+
+Antes de start: mode media  (LLM off, Jellyfin on)
+EOF
+}
+
+qbit_running() {
+  pgrep -f '[q]bittorrent-nox' >/dev/null 2>&1
+}
+
+start_qbit() {
+  mkdir -p "$QBIT_PROFILE" "${MEDIA_ARR}/log" \
+    "${HOME}/storage/shared/Downloads/torrents"
+  if [[ -x "${HOME}/bin/qbit-ensure-config.sh" ]]; then
+    bash "${HOME}/bin/qbit-ensure-config.sh"
+  fi
+  if qbit_running; then
+    echo "qBittorrent-nox ya activo"
+    return 0
+  fi
+  if ! command -v qbittorrent-nox >/dev/null 2>&1; then
+    echo "Error: pkg install qbittorrent-nox" >&2
+    return 1
+  fi
+  command -v termux-wake-lock >/dev/null 2>&1 && termux-wake-lock
+  nohup qbittorrent-nox \
+    --webui-port="${QBIT_WEB_PORT}" \
+    --profile="${QBIT_PROFILE}" \
+    >>"$QBIT_LOG" 2>&1 &
+  sleep 2
+  echo "qBittorrent WebUI: http://127.0.0.1:${QBIT_WEB_PORT}/"
+}
+
+stop_qbit() {
+  pkill -f '[q]bittorrent-nox' 2>/dev/null || true
+}
+
+stop_ubuntu_arr() {
+  if [[ -x "${MEDIA_ARR}/run/stop-ubuntu-arr.sh" ]]; then
+    proot-distro login ubuntu -- bash "${MEDIA_ARR}/run/stop-ubuntu-arr.sh" 2>/dev/null || true
+  fi
+  pkill -f '[R]adarr' 2>/dev/null || true
+  pkill -f '[S]onarr' 2>/dev/null || true
+  pkill -f '[P]rowlarr' 2>/dev/null || true
+  if command -v proot-distro >/dev/null 2>&1; then
+    while read -r pid _; do
+      [[ -n "$pid" && "$pid" =~ ^[0-9]+$ ]] && proot-distro kill "$pid" 2>/dev/null || true
+    done < <(proot-distro ps 2>/dev/null | awk 'NR>1 {print $1}')
+  fi
+}
+
+start_ubuntu_arr() {
+  if proot-distro ps 2>/dev/null | grep -q ubuntu; then
+    echo "    sesión proot ubuntu ya activa (proot-distro ps)"
+    return 0
+  fi
+  proot-distro login -d --no-kill-on-exit ubuntu -- env MEDIA_FLARESOLVERR="${MEDIA_FLARESOLVERR:-1}" \
+    bash "${MEDIA_ARR}/run/start-ubuntu-arr.sh"
+  sleep 5
+}
+
+cmd_start() {
+  if declare -F mode_llama_running >/dev/null 2>&1 && mode_llama_running; then
+    echo "Error: para LLM primero (mode idle / mode media)." >&2
+    exit 1
+  fi
+  [[ -x "${MEDIA_ARR}/run/start-ubuntu-arr.sh" ]] || {
+    echo "Error: ejecuta install-media-arr-stack.sh" >&2
+    exit 1
+  }
+  echo "==> qBittorrent-nox"
+  start_qbit
+  echo "==> *Arr* (proot Ubuntu, sesión detached)"
+  start_ubuntu_arr
+  echo "Listo. Radarr :7878 Sonarr :8989 Prowlarr :9696 FlareSolverr :8191"
+}
+
+cmd_stop() {
+  stop_qbit
+  stop_ubuntu_arr
+  command -v termux-wake-unlock >/dev/null 2>&1 && termux-wake-unlock
+  echo "media-stack detenido (Jellyfin no tocado)."
+}
+
+cmd_status() {
+  echo "=== media-stack ==="
+  qbit_running && echo "qBittorrent-nox: activo (WebUI :${QBIT_WEB_PORT})" || echo "qBittorrent-nox: off"
+  proot-distro ps 2>/dev/null | grep -F ' ubuntu ' >/dev/null && echo "proot ubuntu: sesión activa" || echo "proot ubuntu: sin sesión"
+  for pair in "7878:Radarr" "8989:Sonarr" "9696:Prowlarr"; do
+    port="${pair%%:*}"
+    name="${pair##*:}"
+    if curl -sf -m 2 "http://127.0.0.1:${port}/" >/dev/null 2>&1; then
+      echo "${name}: responde :${port}"
+    else
+      pgrep -f "$name" >/dev/null 2>&1 && echo "${name}: proceso sin HTTP :${port}" || echo "${name}: off"
+    fi
+  done
+  if curl -sf -m 2 -X POST "http://127.0.0.1:8191/v1" \
+    -H 'Content-Type: application/json' \
+    -d '{"cmd":"sessions.list"}' >/dev/null 2>&1; then
+    echo "FlareSolverr: responde :8191"
+  elif pgrep -f '[s]rc/flaresolverr.py' >/dev/null 2>&1; then
+    echo "FlareSolverr: proceso sin API :8191 (revisa log/flaresolverr.log)"
+  elif [[ "${MEDIA_FLARESOLVERR:-1}" == "0" ]]; then
+    echo "FlareSolverr: omitido (MEDIA_FLARESOLVERR=0)"
+  else
+    echo "FlareSolverr: off (revisa ~/media-arr/log/flaresolverr.log)"
+  fi
+  if declare -F mode_show_status >/dev/null 2>&1; then
+    mode_show_status
+  else
+    mode status 2>/dev/null || true
+  fi
+}
+
+case "${1:-}" in
+  start) cmd_start ;;
+  stop) cmd_stop ;;
+  status) cmd_status ;;
+  help|-h|--help) usage ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac

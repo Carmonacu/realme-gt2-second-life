@@ -2,7 +2,27 @@
 # Verify WSL2 and print toolchain versions for kernel builds.
 set -euo pipefail
 
+REQUIRE_TOOLCHAIN=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --require-toolchain)
+      REQUIRE_TOOLCHAIN=1
+      shift
+      ;;
+    -h|--help)
+      echo "Usage: verify-wsl.sh [--require-toolchain]"
+      echo "  --require-toolchain  exit non-zero if gcc/clang/make/ccache/repo missing"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
 fail=0
+tool_fail=0
 
 is_wsl2=0
 if [[ -f /proc/version ]] && grep -qi microsoft /proc/version; then
@@ -39,6 +59,7 @@ print_ver() {
     "$@" 2>/dev/null | head -1
   else
     echo "$name: not installed" >&2
+    tool_fail=1
   fi
 }
 
@@ -46,7 +67,7 @@ echo
 echo "=== Tool versions ==="
 print_ver "gcc" gcc --version
 print_ver "clang" clang --version
-print_ver "lld" lld --version
+print_ver "lld" ld.lld --version
 print_ver "make" make --version
 print_ver "python3" python3 --version
 print_ver "git" git --version
@@ -55,5 +76,10 @@ print_ver "repo" repo version
 print_ver "bc" bc --version
 print_ver "bison" bison --version
 print_ver "flex" flex --version
+
+if [[ "$REQUIRE_TOOLCHAIN" -eq 1 && "$tool_fail" -ne 0 ]]; then
+  echo "Toolchain incomplete. Run: $(dirname "$0")/setup-build-env.sh" >&2
+  fail=1
+fi
 
 exit "$fail"

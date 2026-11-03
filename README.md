@@ -14,8 +14,11 @@ Project to port **Kali NetHunter** to the **Realme GT 2** European variant (**RM
 
 There is **no official NetHunter device entry** for porsche yet; this repo tracks the porting workflow and backups.
 
+**EU RMX3311 unlock blocked (2026):** Plan A (custom ROM + NetHunter kernel) is **paused** on the primary device. **Plan B** — stock ColorOS, Termux, local LLM, rootless Kali, SSH, Tailscale — is documented and verified; see [docs/STATUS.md](docs/STATUS.md). Community alternatives and optional services (media, sync, Docker-like tools): [docs/second-life-ecosystem.md](docs/second-life-ecosystem.md) (Spanish). Before publishing a fork: [docs/publishing-notes.md](docs/publishing-notes.md).
+
 ## Plan and phases
 
+- **Current execution status:** [docs/STATUS.md](docs/STATUS.md) · **Phase gates:** [docs/PHASE-GATES.md](docs/PHASE-GATES.md)
 - **Condensed roadmap:** [docs/PLAN.md](docs/PLAN.md)
 - **Action checklists (Fase 0–8):**
   - [00 – Prep](docs/phases/00-prep.md)
@@ -50,6 +53,8 @@ There is **no official NetHunter device entry** for porsche yet; this repo track
 ```powershell
 # From repo root on Windows
 .\scripts\windows\check-platform-tools.ps1
+.\scripts\windows\verify-downloads.ps1
+.\scripts\windows\check-adb-device.ps1
 .\scripts\windows\list-fastboot-devices.ps1
 ```
 

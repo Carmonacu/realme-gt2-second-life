@@ -1,0 +1,18 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Jellyfin (modo media). Requiere: pkg install jellyfin-server
+exec 2>&1
+cd "$HOME" || exit 1
+export PATH="$HOME/bin:$PREFIX/bin:$PATH"
+termux-wake-lock 2>/dev/null || true
+
+if command -v jellyfin >/dev/null 2>&1; then
+  exec jellyfin --datadir "$HOME/.jellyfin" --configdir "$HOME/.jellyfin/config" \
+    --logdir "$HOME/.jellyfin/log" --cachedir "$HOME/.jellyfin/cache" \
+    --webdir "$PREFIX/share/jellyfin/web"
+fi
+if command -v jellyfin-server >/dev/null 2>&1; then
+  exec jellyfin-server
+fi
+echo "jellyfin-server: binario no encontrado (pkg install jellyfin-server)" >&2
+sleep 60
+exit 1

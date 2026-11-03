@@ -1,0 +1,27 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Servicio runit opcional (RAM pesada). Deshabilitado por defecto: sv-disable llama-smol
+exec 2>&1
+cd "$HOME" || exit 1
+export PATH="$HOME/bin:$PREFIX/bin:$PATH"
+export LLM_REASONING=off
+export LLM_HOST=127.0.0.1
+export LLM_PORT=8080
+export LLM_REMOTE=0
+
+COMMON="$HOME/bin/llm-common.sh"
+if [[ ! -f "$COMMON" ]]; then
+  echo "llama-smol: falta $COMMON — ejecuta bootstrap.sh" >&2
+  sleep 30
+  exit 1
+fi
+# shellcheck source=/dev/null
+source "$COMMON"
+
+MODEL="$LLM_MODELS/HuggingFaceTB_SmolLM3-3B-Q4_K_M.gguf"
+llm_resolve_server || exit 1
+llm_check_model "$MODEL" || exit 1
+
+termux-wake-lock 2>/dev/null || true
+
+exec "$LLAMA_SERVER" -m "$MODEL" -ngl 0 --host "$LLM_HOST" --port "$LLM_PORT" \
+  --reasoning off -c 4096 -t 2 --jinja

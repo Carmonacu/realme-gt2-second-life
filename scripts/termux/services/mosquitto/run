@@ -1,0 +1,22 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Mosquitto MQTT (modo light-stack). Requiere: pkg install mosquitto
+exec 2>&1
+cd "$HOME" || exit 1
+export PATH="$HOME/bin:$PREFIX/bin:$PATH"
+
+CONF="${PREFIX}/etc/mosquitto/mosquitto.conf"
+if [[ ! -f "$CONF" ]]; then
+  mkdir -p "$HOME/.mosquitto"
+  CONF="$HOME/.mosquitto/mosquitto.conf"
+  if [[ ! -f "$CONF" ]]; then
+    cat >"$CONF" <<EOF
+listener 1883 127.0.0.1
+allow_anonymous true
+persistence true
+persistence_location $HOME/.mosquitto/data/
+EOF
+    mkdir -p "$HOME/.mosquitto/data"
+  fi
+fi
+
+exec mosquitto -c "$CONF"

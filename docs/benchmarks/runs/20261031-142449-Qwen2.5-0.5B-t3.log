@@ -1,0 +1,15 @@
+﻿START 2026-10-31T14:24:47+01:00
+model=/data/local/tmp/models/qwen2.5-0.5b-instruct-q4_k_m.gguf threads=3
+temp_before=335
+MemAvailable:    4460832 kB
+load_backend: loaded RPC backend from /data/local/tmp/llama/libggml-rpc.so
+load_backend: loaded CPU backend from /data/local/tmp/llama/libggml-cpu-android_armv8.2_2.so
+| model                          |       size |     params | backend    | threads |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | ------: | --------------: | -------------------: |
+| qwen2 1B Q4_K - Medium         | 462.96 MiB |   630.17 M | CPU        |       3 |           pp512 |         39.75 ± 0.09 |
+| qwen2 1B Q4_K - Medium         | 462.96 MiB |   630.17 M | CPU        |       3 |           tg128 |         25.64 ± 0.45 |
+
+build: 5047748f1 (12017)
+temp_after=333
+bench_exit=0
+BENCH_DONE 2026-10-31T14:25:56+01:00

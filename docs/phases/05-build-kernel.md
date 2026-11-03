@@ -6,9 +6,10 @@
 
 ## Checklist
 
-- [ ] WSL: run setup from `scripts/wsl/` when available; confirm ~40–60 GB disk.
-- [ ] Clone kernel matching your ROM (e.g. `LineageOS/android_kernel_oneplus_sm8350` or PixelOS-Devices variant).
-- [ ] Clone **device tree** for `porsche`.
+- [ ] WSL toolchain ready (`verify-wsl.sh --require-toolchain`).
+- [ ] Dry-run clone plan: `ROM=lineage scripts/wsl/clone-kernel-tree.sh` (no network until `CONFIRM=1`).
+- [ ] Clone kernel + device tree: `CONFIRM=1 ROM=lineage|pixelos scripts/wsl/clone-kernel-tree.sh` (match installed ROM).
+- [ ] Clone **device tree** for `porsche` (included in clone script).
 - [ ] Clone [kali-nethunter-kernel-builder](https://gitlab.com/kalilinux/nethunter/build-scripts/kali-nethunter-kernel-builder) inside kernel tree.
 - [ ] Study reference: [Sakura_Kernel_OP9Pro](https://github.com/Madara273/Sakura_Kernel_OP9Pro) (`staging_sakura`).
 - [ ] Create `local.config` from builder `config` (arm64, porsche/lahaina defconfig, `IMAGE_NAME`, A/B slots).
@@ -19,6 +20,15 @@
 - [ ] Enable `IKCONFIG_PROC` for on-device config check.
 - [ ] `./build.sh` → AnyKernel config (`porsche`, boot block, slot) → create **AnyKernel zip**.
 - [ ] Store zip in `downloads/` (gitignored), note git SHA and defconfig name.
+
+## Repo commands
+
+```bash
+bash scripts/wsl/verify-wsl.sh --require-toolchain
+ROM=pixelos bash scripts/wsl/clone-kernel-tree.sh
+CONFIRM=1 ROM=pixelos bash scripts/wsl/clone-kernel-tree.sh
+bash scripts/wsl/check-kernel-docker-config.sh ~/android/kernel/.config
+```
 
 ## Notes
 

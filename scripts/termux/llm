@@ -1,0 +1,81 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Menú: llm [smol|qwen3b|qwen05|ds15|phi] [ctx]
+set -euo pipefail
+
+BIN="${HOME}/bin"
+usage() {
+  cat <<'EOF'
+Uso: llm <modelo> [contexto] [--remote]
+
+Modelos (llama-server + UI web http://127.0.0.1:8080):
+  smol     SmolLM3-3B Q4_K_M     -t 2  ctx 4096  (~9,6 tok/s)  [recomendado]
+  qwen3b   Qwen2.5-3B Instruct   -t 4  ctx 4096  (~6,9 tok/s)
+  qwen05   Qwen2.5-0.5B          -t 4  ctx 4096  (~51 tok/s)
+  ds15     DeepSeek-R1 1.5B      -t 4  ctx 4096  (~24 tok/s)
+  phi      Phi-4-mini            -t 4  ctx 2048  (~5,4 tok/s, RAM alta)
+
+Opciones:
+  --remote   Escucha en la IP Tailscale (tun*/100.x) si está activa; si no, falla salvo
+             LLM_REMOTE_BIND_ALL=1 (0.0.0.0, también Wi‑Fi LAN). API key: ~/.llm-api-key
+
+Ejemplos:
+  llm smol
+  llm smol --remote
+  llm phi 2048
+  llm qwen3b 4096
+
+RAM antes de arrancar:
+EOF
+  awk '/^MemAvailable:/ { printf "  MemAvailable: %.2f GiB\n", $2/1024/1024 }' /proc/meminfo 2>/dev/null || true
+  exit "${1:-0}"
+}
+
+[[ $# -ge 1 ]] || usage 1
+
+LLM_REMOTE=0
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --remote)
+      LLM_REMOTE=1
+      shift
+      ;;
+    help|-h|--help)
+      usage 0
+      ;;
+    *)
+      ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+export LLM_REMOTE
+
+[[ ${#ARGS[@]} -ge 1 ]] || usage 1
+MODEL="${ARGS[0]}"
+CTX="${ARGS[1]:-}"
+
+case "$MODEL" in
+  smol)
+    exec "$BIN/run-smol.sh" "${CTX:-4096}"
+    ;;
+  qwen3b|qwen3)
+    exec "$BIN/run-qwen3b.sh" "${CTX:-4096}"
+    ;;
+  qwen05|qwen0.5|fast)
+    exec "$BIN/run-qwen05.sh" "${CTX:-4096}"
+    ;;
+  ds15|deepseek|ds)
+    exec "$BIN/run-ds15.sh" "${CTX:-4096}"
+    ;;
+  phi)
+    exec "$BIN/run-phi.sh" "${CTX:-2048}"
+    ;;
+  help|-h|--help)
+    usage 0
+    ;;
+  *)
+    echo "Modelo desconocido: $MODEL" >&2
+    usage 1
+    ;;
+esac

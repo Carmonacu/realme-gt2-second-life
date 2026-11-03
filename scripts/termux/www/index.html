@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Realme GT2 — Portal Termux</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #3d9cf0;
+      --ok: #3dd68c;
+      --warn: #f0b429;
+      --bad: #f07178;
+      --border: #2a3548;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 1rem 1.25rem 3rem;
+      max-width: 52rem;
+      margin-inline: auto;
+    }
+    h1 { font-size: 1.35rem; font-weight: 650; margin: 0 0 0.25rem; }
+    .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 1.25rem; }
+    .status-bar {
+      display: flex; flex-wrap: wrap; gap: 0.5rem 1rem;
+      padding: 0.75rem 1rem; background: var(--card); border-radius: 10px;
+      border: 1px solid var(--border); margin-bottom: 1.5rem; font-size: 0.88rem;
+    }
+    .pill { display: inline-flex; align-items: center; gap: 0.35rem; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .dot.ok { background: var(--ok); }
+    .dot.warn { background: var(--warn); }
+    .dot.bad { background: var(--bad); }
+    h2 { font-size: 1.05rem; margin: 1.75rem 0 0.65rem; color: var(--accent); }
+    section { margin-bottom: 0.5rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { text-align: left; padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .links { display: grid; gap: 0.5rem; }
+    .link-card {
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;
+      padding: 0.65rem 0.85rem; background: var(--card); border-radius: 8px; border: 1px solid var(--border);
+    }
+    .link-card.off { opacity: 0.55; }
+    .link-card .meta { font-size: 0.8rem; color: var(--muted); }
+    .tag { font-size: 0.72rem; padding: 0.15rem 0.45rem; border-radius: 4px; background: #243044; color: var(--muted); }
+    .note { font-size: 0.82rem; color: var(--muted); margin-top: 0.75rem; }
+    code { font-size: 0.82em; background: #243044; padding: 0.1rem 0.35rem; border-radius: 4px; }
+    footer { margin-top: 2rem; font-size: 0.8rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <h1>Realme GT 2 (RMX3311) — Plan B</h1>
+  <p class="sub">Portal Termux: enlaces, modos, modelos LLM y estado en vivo (<code>status.json</code>).</p>
+
+  <div class="status-bar" id="live-status">
+    <span class="pill"><span class="dot" id="dot-mode"></span> Modo: <strong id="val-mode">…</strong></span>
+    <span class="pill">RAM libre: <strong id="val-mem">…</strong></span>
+    <span class="pill">Tailscale: <strong id="val-ts">…</strong></span>
+    <span class="pill meta" id="val-updated">Actualizando…</span>
+  </div>
+
+  <section>
+    <h2>Accesos rápidos</h2>
+    <div class="links" id="quick-links"></div>
+    <p class="note">Desde otro dispositivo en la tailnet usa la IP <code>100.x</code> (abre la app Tailscale en el teléfono tras reboot). LLM remoto exige API key en <code>~/.llm-api-key</code>.</p>
+  </section>
+
+  <section>
+    <h2>Modos (<code>mode</code>)</h2>
+    <p class="note">Un solo servicio <strong>pesado</strong> a la vez (8 GB). Boot por defecto: <code>idle</code>.</p>
+    <table>
+      <thead><tr><th>Modo</th><th>Incluye</th><th>Comando</th></tr></thead>
+      <tbody>
+        <tr><td><code>idle</code></td><td>Solo sshd (+ portal). Todo pesado apagado.</td><td><code>mode idle</code></td></tr>
+        <tr><td><code>llm</code></td><td><code>llama-server</code> SmolLM3, UI :8080</td><td><code>mode llm</code> / <code>llm smol</code></td></tr>
+        <tr><td><code>pentest</code></td><td>Kali rootless (LLM off). <code>kali</code>, nmap, msf sin DB.</td><td><code>mode pentest --shell</code></td></tr>
+        <tr><td><code>media</code></td><td>Jellyfin :8096 (Direct Play; sin transcode + LLM)</td><td><code>mode media</code></td></tr>
+        <tr><td><code>light-stack</code></td><td>Mosquitto :1883 + Node-RED :1880</td><td><code>mode light-stack</code></td></tr>
+        <tr><td><code>lab</code></td><td>udocker manual (LLM off)</td><td><code>mode lab</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Modelos LLM</h2>
+    <table>
+      <thead><tr><th>Alias</th><th>Uso</th><th>Comando</th><th>~tok/s</th></tr></thead>
+      <tbody>
+        <tr><td><strong>smol</strong></td><td>Chat diario (ES/EN/…). Recomendado.</td><td><code>llm smol</code></td><td>~9,6</td></tr>
+        <tr><td>qwen3b</td><td>Alternativa 3B multilingüe</td><td><code>llm qwen3b</code></td><td>~6,9</td></tr>
+        <tr><td>qwen05</td><td>Respuestas muy rápidas, pruebas</td><td><code>llm qwen05</code></td><td>~51</td></tr>
+        <tr><td>ds15</td><td>Razonamiento / CoT (estudio)</td><td><code>llm ds15</code></td><td>~24</td></tr>
+        <tr><td>phi</td><td>Código / reasoning (RAM alta, ctx 2048)</td><td><code>llm phi</code></td><td>~5,4</td></tr>
+      </tbody>
+    </table>
+    <p class="note">CPU <code>-ngl 0</code>, llama.cpp b12017. No uses <code>-t 6/8</code> en modelos ≥3B. Modelos en <code>~/models/</code>.</p>
+  </section>
+
+  <section>
+    <h2>Servicios y puertos</h2>
+    <table id="svc-table">
+      <thead><tr><th>Servicio</th><th>Puerto</th><th>Estado</th><th>Modo</th></tr></thead>
+      <tbody id="svc-body"></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Plan A vs Plan B</h2>
+    <table>
+      <tbody>
+        <tr><td><strong>Plan A</strong> (NetHunter kernel)</td><td>Pausado — bootloader EU bloqueado</td></tr>
+        <tr><td><strong>Plan B</strong> (stock + Termux)</td><td>Operativo: LLM, SSH :8022, Tailscale, Kali rootless, servicios opcionales</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>
+    Repo: <code>realme-gt2-second-life</code> — docs: <code>termux-llm-guide.md</code>, <code>service-modes-design.md</code>, <code>portal-homepage.md</code>.
+    Refrescar estado: <code>bash ~/bin/portal-status.sh</code> o <code>mode status</code> (SSH).
+  </footer>
+
+  <script>
+    const SERVICE_LABELS = {
+      portal: 'Portal (esta página)',
+      ssh: 'SSH Termux',
+      llm: 'LLM chat / API',
+      jellyfin: 'Jellyfin',
+      mosquitto: 'Mosquitto MQTT',
+      node_red: 'Node-RED',
+      radarr: 'Radarr',
+      sonarr: 'Sonarr',
+      prowlarr: 'Prowlarr',
+      qbit: 'qBittorrent'
+    };
+
+    function baseUrl(data) {
+      const h = window.location.hostname;
+      if (h && h !== '127.0.0.1' && h !== 'localhost') return 'http://' + h;
+      if (data.tailscale_ip) return 'http://' + data.tailscale_ip;
+      return 'http://127.0.0.1';
+    }
+
+    function serviceUrl(data, key, svc) {
+      if (key === 'ssh') return null;
+      if (key === 'mosquitto') return null;
+      const b = baseUrl(data);
+      const path = svc.path || '/';
+      return b + ':' + svc.port + path;
+    }
+
+    function renderQuickLinks(data) {
+      const el = document.getElementById('quick-links');
+      el.innerHTML = '';
+      const order = ['jellyfin', 'radarr', 'sonarr', 'prowlarr', 'qbit', 'portal', 'llm', 'node_red', 'ssh'];
+      order.forEach(key => {
+        const svc = data.services[key];
+        if (!svc) return;
+        const label = SERVICE_LABELS[key] || key;
+        const url = serviceUrl(data, key, svc);
+        const running = svc.running || (key === 'llm' && svc.health_ok);
+        const card = document.createElement('div');
+        card.className = 'link-card' + (running ? '' : ' off');
+        const left = document.createElement('div');
+        left.innerHTML = '<strong>' + label + '</strong><div class="meta">:' + svc.port + (svc.note ? ' — ' + svc.note : '') + '</div>';
+        const right = document.createElement('div');
+        if (url && key !== 'ssh') {
+          const a = document.createElement('a');
+          a.href = url;
+          a.textContent = running ? 'Abrir' : 'Abrir (puede estar apagado)';
+          a.target = '_blank';
+          right.appendChild(a);
+        } else if (key === 'ssh') {
+          right.innerHTML = '<span class="meta"><code>ssh -p 8022 u0_aNNN@' + (data.tailscale_ip || '100.x') + '</code></span>';
+        }
+        card.appendChild(left);
+        card.appendChild(right);
+        el.appendChild(card);
+      });
+    }
+
+    function renderSvcTable(data) {
+      const tbody = document.getElementById('svc-body');
+      tbody.innerHTML = '';
+      Object.entries(data.services || {}).forEach(([key, svc]) => {
+        const tr = document.createElement('tr');
+        let st = '—';
+        if (svc.running === true) st = '● activo';
+        else if (svc.running === false) st = '○ apagado';
+        if (key === 'llm' && svc.health_ok) st = '● health OK';
+        const modes = (svc.modes || []).join(', ') || (svc.optional ? 'experimento' : '—');
+        tr.innerHTML = '<td>' + (SERVICE_LABELS[key] || key) + '</td><td>:' + svc.port + '</td><td>' + st + '</td><td>' + modes + '</td>';
+        tbody.appendChild(tr);
+      });
+    }
+
+    function applyStatus(data) {
+      document.getElementById('val-mode').textContent = data.mode || '?';
+      document.getElementById('val-mem').textContent = (data.mem_available_gib != null ? data.mem_available_gib + ' GiB' : '—');
+      document.getElementById('val-ts').textContent = data.tailscale_ip || 'sin 100.x (¿VPN?)';
+      document.getElementById('val-updated').textContent = 'JSON: ' + (data.updated_at || '—');
+      const dot = document.getElementById('dot-mode');
+      dot.className = 'dot ' + (data.heavy_processes && data.heavy_processes.length ? 'warn' : 'ok');
+      renderQuickLinks(data);
+      renderSvcTable(data);
+    }
+
+    async function refresh() {
+      try {
+        const r = await fetch('status.json?_=' + Date.now(), { cache: 'no-store' });
+        if (!r.ok) throw new Error(r.status);
+        applyStatus(await r.json());
+      } catch (e) {
+        document.getElementById('val-updated').textContent = 'No se pudo leer status.json — ¿portal-status.sh?';
+      }
+    }
+    refresh();
+    setInterval(refresh, 30000);
+  </script>
+</body>
+</html>

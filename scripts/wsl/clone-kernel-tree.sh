@@ -6,7 +6,7 @@
 #   ROM=lineage|pixelos KERNEL_DIR=~/android/kernel ./clone-kernel-tree.sh
 #   CONFIRM=1 ROM=lineage KERNEL_DIR=~/android/kernel ./clone-kernel-tree.sh
 #
-# Run from WSL2. Project path (Windows): nethunter-realme-gt2-porsche/scripts/wsl/
+# Run from WSL2. Project path (Windows): realme-gt2-second-life/scripts/wsl/
 
 set -euo pipefail
 

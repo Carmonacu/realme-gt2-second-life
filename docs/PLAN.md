@@ -2,6 +2,8 @@
 
 Full checklists live under [phases/](phases/). This file mirrors the phase structure from the master plan.
 
+**Execution tracker:** [STATUS.md](STATUS.md) (what is done on PC vs phone). Scripts for Phase 5 exist in the repo as **scaffolding**; do not treat them as permission to skip Phases 0–4 on the device.
+
 ## Hardware & viability
 
 - **RMX3311 EU**, codename **porsche**, **SM8350** (Snapdragon 888), Android kernel **5.4**.
@@ -82,3 +84,5 @@ flowchart TD
 **8** — `llama.cpp` on CPU (Termux/chroot/Docker); OpenCL/Vulkan/Hexagon v68 as optional experiments.
 
 See individual phase files for checklists.
+
+**Execution gates:** [STATUS.md](STATUS.md) · [PHASE-GATES.md](PHASE-GATES.md)

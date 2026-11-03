@@ -1,0 +1,18 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Node-RED (modo light-stack). Requiere: pkg install node-red
+exec 2>&1
+cd "$HOME" || exit 1
+export PATH="$HOME/bin:$PREFIX/bin:$PATH"
+export NODE_RED_HOME="${NODE_RED_HOME:-$HOME/.node-red}"
+
+mkdir -p "$NODE_RED_HOME"
+termux-wake-lock 2>/dev/null || true
+
+if ! command -v node-red >/dev/null 2>&1; then
+  echo "node-red: no instalado (pkg/nodejs+npm)" >&2
+  sleep 60
+  exit 1
+fi
+
+# Escucha solo en localhost por defecto (Tailscale/SSH tunnel si hace falta)
+exec node-red --userDir "$NODE_RED_HOME" -u 127.0.0.1

@@ -1,0 +1,50 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Portal estático + status.json (nginx). Ligero (~5 MiB nginx worker).
+exec 2>&1
+export PATH="${HOME}/bin:${PREFIX}/bin:${PATH}"
+
+PORT="${PORTAL_PORT:-8081}"
+WWW="${PORTAL_WWW:-${HOME}/var/www/portal}"
+CONF_DIR="${HOME}/.config/portal"
+CONF="${CONF_DIR}/nginx.conf"
+PID="${HOME}/.cache/portal/nginx.pid"
+
+mkdir -p "$WWW" "$CONF_DIR" "$(dirname "$PID")"
+
+if [[ -x "${HOME}/bin/portal-status.sh" ]]; then
+  PORTAL_PORT="$PORT" PORTAL_WWW="$WWW" bash "${HOME}/bin/portal-status.sh" || true
+fi
+
+if ! command -v nginx >/dev/null 2>&1; then
+  echo "portal: nginx no instalado — pkg install nginx" >&2
+  sleep 3600
+  exit 1
+fi
+
+cat >"$CONF" <<EOF
+daemon off;
+error_log stderr warn;
+pid ${PID};
+worker_processes 1;
+events { worker_connections 64; }
+http {
+  include       ${PREFIX}/etc/nginx/mime.types;
+  default_type  application/octet-stream;
+  access_log    off;
+  sendfile      on;
+  server {
+    listen ${PORT};
+    listen [::]:${PORT};
+    root ${WWW};
+    index index.html;
+    location / {
+      try_files \$uri \$uri/ =404;
+    }
+    location = /status.json {
+      add_header Cache-Control "no-store";
+    }
+  }
+}
+EOF
+
+exec nginx -c "$CONF"

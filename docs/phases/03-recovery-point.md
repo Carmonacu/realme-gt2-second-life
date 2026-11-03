@@ -14,6 +14,21 @@
 - [ ] Verify file sizes non-zero; store checksums (optional).
 - [ ] Label backup folder with firmware build string and date.
 
+## Repo helpers
+
+On PC (after root), from repo root:
+
+```bash
+# Push backup script to device (example path on device)
+adb push scripts/backup/backup-critical-partitions.sh /sdcard/
+adb shell su -c 'sh /sdcard/backup-critical-partitions.sh'
+
+# Pull dumps to PC (Git Bash or WSL)
+bash scripts/backup/pull-backups-to-pc.sh
+```
+
+Restore (Phase 7 only, destructive): `CONFIRM=1` required — see `scripts/backup/restore-critical-partitions.sh`.
+
 ## Partitions to backup (by-name)
 
 `persist`, `modemst1`, `modemst2`, `fsg`, `fsc`, `oplusreserve`

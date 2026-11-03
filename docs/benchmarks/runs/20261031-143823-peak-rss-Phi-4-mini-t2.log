@@ -1,0 +1,66 @@
+﻿START 2026-10-31T14:38:22+01:00
+model=/data/local/tmp/models/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf threads=2 ctx=4096 n=64
+temp_before=320
+=== mem before ===
+MemFree:         2279220 kB
+MemAvailable:    4448524 kB
+OMemFree:       16384 kB
+cli_pid=29835
+sample VmHWM=1264kB VmRSS=1152kB
+
+
+Loading model... |-\|/-\|/-sample VmHWM=69748kB VmRSS=65172kB
+\|/-\|/-\|/sample VmHWM=1272064kB VmRSS=1294592kB
+-\|/-\|/-\|sample VmHWM=2523240kB VmRSS=2500724kB
+/-\|/-\|/-\sample VmHWM=2545264kB VmRSS=2528352kB
+|/-\|/-\|/sample VmHWM=2563280kB VmRSS=2568128kB
+-\|/-\|/-\|sample VmHWM=2595256kB VmRSS=2599128kB
+/-\|/-\|/-\sample VmHWM=2708996kB VmRSS=2684524kB
+|/-\|/-\|/-sample VmHWM=3200412kB VmRSS=3215728kB
+\|/-\|/-\|/sample VmHWM=3792648kB VmRSS=3808952kB
+-\|/-\|/-\|sample VmHWM=4401424kB VmRSS=4415672kB
+/-\|/-\|/-\sample VmHWM=4436800kB VmRSS=4443124kB
+|/-\|/-\|/-\sample VmHWM=4446888kB VmRSS=4385344kB
+|/-\|/-\|/ sample VmHWM=4446888kB VmRSS=4377600kB
+
+
+▄▄ ▄▄
+██ ██
+██ ██  ▀▀█▄ ███▄███▄  ▀▀█▄    ▄████ ████▄ ████▄
+██ ██ ▄█▀██ ██ ██ ██ ▄█▀██    ██    ██ ██ ██ ██
+██ ██ ▀█▄██ ██ ██ ██ ▀█▄██ ██ ▀████ ████▀ ████▀
+                                    ██    ██
+                                    ▀▀    ▀▀
+
+build      : b12017-5047748f1
+model      : /data/local/tmp/models/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf
+ftype      : Q4_K - Medium
+modalities : text
+
+available commands:
+  /exit or Ctrl+C     stop or exit
+  /regen              regenerate the last response
+  /clear              clear the chat history
+  /read <file>        add a text file
+  /glob <pattern>     add text files using globbing pattern
+
+
+
+> Hola
+¡Hola!sample VmHWM=4446888kB VmRSS=4380340kB
+ ¿Cómo puedo ayudarte hoysample VmHWM=4446888kB VmRSS=4380564kB
+?
+
+[ Prompt: 9.1 t/s | Generation: 4.3 t/s ]
+
+> 
+
+Exiting...
+peak_VmHWM_kB=4446888
+=== mem after ===
+MemFree:         3158528 kB
+MemAvailable:    4675920 kB
+OMemFree:       16384 kB
+temp_after=319
+cli_exit=0
+BENCH_DONE 2026-10-31T14:38:40+01:00

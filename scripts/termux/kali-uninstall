@@ -1,0 +1,16 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Elimina rootfs Kali NetHunter rootless (no toca modelos LLM ni Termux base).
+set -e
+
+KALI_CHROOT="${HOME}/kali-arm64"
+ARCHIVE="${HOME}/kali-nethunter-rootfs-"*.tar.xz
+
+echo "Esto borrará ${KALI_CHROOT} y lanzadores nh/nethunter."
+read -r -p "Escribe SI para continuar: " ans
+[[ "$ans" == "SI" ]] || { echo "Cancelado."; exit 1; }
+
+pkill -f 'proot.*kali-arm64' 2>/dev/null || true
+rm -rf "$KALI_CHROOT"
+rm -f "${PREFIX}/bin/nethunter" "${PREFIX}/bin/nh" 2>/dev/null || true
+rm -f "$HOME"/kali-nethunter-rootfs-*.tar.xz "$HOME/install-nethunter-termux" 2>/dev/null || true
+echo "Listo. Termux intacto; modelos en ~/models sin cambios."

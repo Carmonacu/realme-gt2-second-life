@@ -1,0 +1,9 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Copiar a ~/.termux/boot/start-services (install-boot-services.sh).
+# Requiere Termux:Boot (F-Droid) abierto al menos una vez.
+termux-wake-lock
+. "${PREFIX:-/data/data/com.termux/files/usr}/etc/profile.d/start-services.sh"
+# Modo por defecto tras runit: idle (LLM manual con «mode llm»). Ver docs/service-modes-design.md
+if [ -x "${HOME}/bin/mode" ]; then
+  bash "${HOME}/bin/mode" apply "${TERMUX_DEFAULT_MODE:-idle}" 2>/dev/null || true
+fi

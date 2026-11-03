@@ -89,6 +89,17 @@ if ! command -v sudo >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! sudo -n true 2>/dev/null; then
+  if [[ ! -t 0 ]] || [[ ! -t 1 ]]; then
+    echo "ERROR: apt install needs an interactive sudo password." >&2
+    echo "Open Ubuntu (WSL) from the Start menu, then run:" >&2
+    echo "  bash $(cd "$(dirname "$0")" && pwd)/setup-build-env.sh" >&2
+    echo "Or from PowerShell: wsl -d Ubuntu" >&2
+    exit 1
+  fi
+  echo "You will be prompted for your Linux user password (sudo)." >&2
+fi
+
 sudo apt-get update
 if ! sudo apt-get install -y --no-install-recommends "${APT_PACKAGES[@]}"; then
   echo "Some packages failed; retrying without 'repo' if that was the cause..." >&2
