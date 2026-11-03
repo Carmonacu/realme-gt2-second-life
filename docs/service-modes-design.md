@@ -48,7 +48,7 @@ Definir modos nombrados con listas explícitas de procesos permitidos:
 | `llm` (default) | `llama-server` | sshd, Tailscale | — |
 | `pentest` | proot Kali (escaneos) | sshd, wake-lock | **Parar** `llama-server` antes de entrar |
 | `media` | Jellyfin (Direct Play) | sshd, Syncthing opcional | **Parar** LLM; no transcode concurrente |
-| `gaming` *(futuro)* | JVM Minecraft (Paper/Purpur) | sshd, Tailscale | **Parar** LLM; `-Xmx2G`–`-Xmx3G`; wake-lock; puerto 25565 vía tailnet |
+| `gaming` | JVM Minecraft (Paper, `mc-server`) | sshd, Tailscale | **Parar** LLM, Jellyfin, qBittorrent; heap 2560M; pantalla on + wake-lock; puerto 25565 vía tailnet — [minecraft-java.md](minecraft-java.md) |
 | `light-stack` | ninguno | mosquitto, syncthing, sshd | LLM apagado si RAM &lt; umbral |
 | `idle` | ninguno | solo sshd + Tailscale | todo lo demás off |
 | `maintenance` *(futuro)* | ninguno (LLM off) | sshd, rclone/restic puntual | **Parar** LLM; ventana upgrade/backup; ver [second-life-ecosystem.md §4](second-life-ecosystem.md) |
@@ -111,7 +111,7 @@ Ver explicación detallada en el mensaje al usuario (Parte 1). Resumen para dise
 | Jellyfin / Plex | `media` | **Sí** (transcode); Direct Play parcial OK |
 | Node-RED + Mosquitto | `light-stack` | Parcial (apagar LLM si RAM justa) |
 | udocker / QEMU+Docker | modo `lab` experimental | **Sí** — solo con LLM apagado |
-| Minecraft Java (Paper) | `gaming` *(futuro)* | **Sí** — §3.3 |
+| Minecraft Java (Paper) | `gaming` (**operativo 2026-11-03**, [minecraft-java.md](minecraft-java.md)) | **Sí** — §3.3 |
 | Minetest / OpenTTD | `gaming` *(futuro)* | **Sí** |
 | whisper.cpp | `stt` *(futuro)* | **Sí** |
 | ntfy / Gotify | `light-stack` | No — hook `~/.config/gt2-power/notify-hook` ya previsto |
@@ -135,7 +135,7 @@ Backlog completo (autónomas vs NAS/sync): **[second-life-ecosystem.md §4](seco
 2. ~~Definir tabla de procesos «heavy»~~ **Hecho en `mode-lib.sh`.**
 3. Añadir tests en dry-run: `mode status` desde `phone-check-remote.sh` — **parcial (v1).**
 4. Enlazado desde [second-life-ecosystem.md](second-life-ecosystem.md) y [phone-tuning.md § E](phone-tuning.md#e-mantener-el-rol-principal-política-operativa). Arranque tras reboot: [termux-boot-services.md](termux-boot-services.md) (`install-boot-services.sh` + `mode apply idle`).
-5. **Modo `gaming`:** guía mínima + hook en `mode` (OpenJDK + Paper, Geyser opcional); benchmark 2 jugadores en tailnet antes de documentar como «operativo».
+5. ~~**Modo `gaming`:** guía mínima + hook en `mode` (OpenJDK + Paper, Geyser opcional)~~ **Hecho 2026-11-03** ([minecraft-java.md](minecraft-java.md)); pendiente: benchmark con 2+ jugadores reales en tailnet.
 
 ---
 

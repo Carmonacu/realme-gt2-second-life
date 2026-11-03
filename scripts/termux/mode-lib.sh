@@ -12,8 +12,9 @@ MODE_LOG_FILE="${MODE_LOG_FILE:-${HOME}/storage/shared/mode-transitions.log}"
 MODE_MIN_LLM_KB="${MODE_MIN_LLM_KB:-2621440}"       # ~2,5 GiB
 MODE_MIN_PENTEST_KB="${MODE_MIN_PENTEST_KB:-1572864}" # ~1,5 GiB (KALI_MIN_MEM_KB)
 MODE_MIN_MEDIA_KB="${MODE_MIN_MEDIA_KB:-1572864}"
+MODE_MIN_GAMING_KB="${MODE_MIN_GAMING_KB:-2883584}"   # ~2,75 GiB (Paper -Xmx2560M; heap se reserva bajo demanda)
 
-MODE_VALID="llm idle pentest media light-stack lab"
+MODE_VALID="llm idle pentest media light-stack lab gaming"
 
 # Energía (charge-limiter / thermal-guard): estado compartido en ~/.cache/gt2-power
 POWER_CACHE_DIR="${POWER_CACHE_DIR:-${HOME}/.cache/gt2-power}"
@@ -29,6 +30,34 @@ mode_mem_available_gib() {
 
 mode_llama_running() {
   pgrep -f '/llama-server' >/dev/null 2>&1
+}
+
+# --- Minecraft (mc-server / servicio runit «minecraft») ---
+mode_minecraft_running() {
+  pgrep -f '[D]gt2.minecraft=1' >/dev/null 2>&1
+}
+
+mode_mc_cmd() {
+  local c="${HOME}/bin/mc-server"
+  [[ -x "$c" ]] && echo "$c"
+}
+
+# Parada limpia («stop» por consola); MC_BACKUP_ON_STOP=1 (minecraft.conf o entorno) → backup antes
+mode_stop_minecraft() {
+  local c
+  c="$(mode_mc_cmd)" || true
+  if ! mode_minecraft_running; then
+    [[ -d "$(mode_svc_path minecraft)" ]] && touch "$(mode_svc_path minecraft)/down" 2>/dev/null
+    return 0
+  fi
+  if [[ -z "$c" ]]; then
+    pkill -f '[D]gt2.minecraft=1' 2>/dev/null || true
+    return 0
+  fi
+  if [[ "${MC_BACKUP_ON_STOP:-$(sed -n 's/^MC_BACKUP_ON_STOP=//p' "${HOME}/.config/gt2-minecraft/minecraft.conf" 2>/dev/null | tail -1)}" == "1" ]]; then
+    "$c" backup 9>&- || echo "Aviso: backup de Minecraft fallido (se para igualmente)." >&2
+  fi
+  "$c" stop 9>&- || return 1
 }
 
 mode_stop_llama() {
@@ -66,9 +95,11 @@ mode_ensure_runsvdir() {
 
 mode_heavy_procs() {
   mode_llama_running && echo "llama-server"
-  pgrep -f '[j]ellyfin' >/dev/null 2>&1 && echo "jellyfin"
+  # Solo el servidor (no «runsv jellyfin» / svlogd, vivos aunque el servicio esté parado)
+  pgrep -f '[/]bin/jellyfin( |$)' >/dev/null 2>&1 && echo "jellyfin"
   pgrep -f 'qemu-system-' >/dev/null 2>&1 && echo "qemu-system"
   pgrep -x udocker >/dev/null 2>&1 && echo "udocker"
+  mode_minecraft_running && echo "minecraft"
   return 0
 }
 
@@ -221,6 +252,7 @@ mode_thermal_state() {
 }
 
 mode_stop_all_heavy() {
+  mode_stop_minecraft || true
   mode_stop_llama || true
   mode_sv_down llama-smol
   mode_stop_media_stack
@@ -256,6 +288,7 @@ mode_screen_cmd() {
 }
 
 mode_screen_on() {
+  local label="${1:-llm}"
   [[ "$(mode_llm_conf_get SCREEN_CONTROL 1)" == "1" ]] || return 0
   local c out
   c="$(mode_screen_cmd)" || true
@@ -266,9 +299,9 @@ mode_screen_on() {
   if out="$(timeout 60 "$c" on 2>&1 9>&-)"; then
     echo "==> ${out##*$'\n'}"
   else
-    echo "Aviso: no se pudo encender la pantalla (gt2-screen on). Con la pantalla apagada el LLM va" >&2
+    echo "Aviso: no se pudo encender la pantalla (gt2-screen on). Con la pantalla apagada la CPU va" >&2
     echo "  ~3× más lento (cpu4 a 1,44 GHz). Detalle: $(echo "$out" | grep -m1 . ) (gt2-screen connect)" >&2
-    mode_log_transition "$(mode_read_state)" llm "screen_on=failed" 2>/dev/null || true
+    mode_log_transition "$(mode_read_state)" "$label" "screen_on=failed" 2>/dev/null || true
   fi
   return 0
 }
@@ -410,6 +443,7 @@ mode_apply_unlocked() {
       mode_screen_off_on_exit
       ;;
     llm)
+      mode_stop_minecraft || true
       mode_stop_media_stack
       pgrep -f 'qemu-system-' >/dev/null 2>&1 && pkill -f 'qemu-system-' 2>/dev/null || true
       mode_sv_down llama-smol
@@ -446,6 +480,7 @@ mode_apply_unlocked() {
       mode_screen_off_on_exit
       ;;
     light-stack)
+      mode_stop_minecraft || true
       mode_stop_llama || true
       mode_sv_down llama-smol
       mode_stop_media_stack
@@ -463,6 +498,43 @@ mode_apply_unlocked() {
       mode_log_transition "$from" light-stack
       echo "Modo: light-stack"
       mode_screen_off_on_exit
+      ;;
+    gaming)
+      local mc
+      mc="$(mode_mc_cmd)" || true
+      if [[ -z "$mc" || ! -f "${MC_DIR:-${HOME}/minecraft/paper}/paper.jar" ]]; then
+        echo "Error: Minecraft no instalado: mc-server install" >&2
+        return 1
+      fi
+      if ! mode_minecraft_running; then
+        mode_stop_all_heavy
+        [[ -x "${HOME}/bin/media-stack" ]] && "${HOME}/bin/media-stack" stop >/dev/null 2>&1 9>&- || true
+        if mode_llama_running; then
+          echo "Error: llama-server sigue activo (pkill -f llama-server)." >&2
+          return 1
+        fi
+        local th
+        th="$(mode_thermal_state)"
+        if [[ "$th" != "normal" && "${MODE_IGNORE_THERMAL:-0}" != "1" ]]; then
+          echo "Error: thermal-guard en estado «$th». Espera o: MODE_IGNORE_THERMAL=1 mode gaming" >&2
+          return 1
+        fi
+        mode_require_mem "$MODE_MIN_GAMING_KB" "gaming" || return 1
+      fi
+      mode_screen_on gaming
+      mode_acquire_wakelock
+      if ! "$mc" start 9>&-; then
+        if mode_minecraft_running; then
+          echo "Aviso: Minecraft sigue arrancando (mc-server logs -f)." >&2
+        else
+          echo "Error: Minecraft no arrancó (mc-server logs)." >&2
+          mode_log_transition "$from" gaming "failed"
+          return 1
+        fi
+      fi
+      mode_write_state gaming
+      mode_log_transition "$from" gaming
+      echo "Modo: gaming (Minecraft Java en :${MC_PORT:-25565}; LLM/Jellyfin off)."
       ;;
     lab)
       mode_stop_all_heavy
@@ -508,6 +580,9 @@ mode_show_status() {
   fi
   echo "térmica: $(mode_thermal_state)"
   mode_screen_status
+  if [[ -n "$(mode_mc_cmd)" ]] && { mode_minecraft_running || [[ "$(mode_read_state)" == "gaming" ]]; }; then
+    timeout 10 "$(mode_mc_cmd)" status 9>&- 2>/dev/null | head -3
+  fi
   if [[ -f "${POWER_CACHE_DIR}/battery.json" ]] && command -v jq >/dev/null 2>&1; then
     jq -r '"batería: \(.percentage)% · \(.temperature) °C · \(.plugged) (\(.status))"' \
       "${POWER_CACHE_DIR}/battery.json" 2>/dev/null || true
@@ -515,7 +590,7 @@ mode_show_status() {
   if command -v sv >/dev/null 2>&1 && pgrep -f '[r]unsvdir' >/dev/null 2>&1; then
     mode_ensure_runsvdir
     echo "runit:"
-    for svc in sshd portal llama-smol jellyfin jellyfin-server mosquitto node-red syncthing charge-limiter thermal-guard; do
+    for svc in sshd portal llama-smol jellyfin jellyfin-server minecraft mosquitto node-red syncthing charge-limiter thermal-guard; do
       if mode_svc_exists "$svc"; then mode_sv_status "$svc"; fi
     done
   else

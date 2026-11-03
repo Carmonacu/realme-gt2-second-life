@@ -62,6 +62,7 @@ mode idle                # para todo lo pesado
 mode pentest --shell     # para LLM + shell Kali (sin kali --force)
 mode media               # Jellyfin (install-optional-services.sh)
 mode light-stack         # Mosquitto + Node-RED
+mode gaming              # Minecraft Java (Paper): mc-server install primero — docs/minecraft-java.md
 ```
 
 Desde el PC (SSH):

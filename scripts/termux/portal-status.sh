@@ -35,6 +35,11 @@ for iface in tun0 tun1 tailscale0 wg0; do
   fi
 done
 
+if [[ -z "$tailscale_ip" ]]; then
+  # La VPN de la app Tailscale no aparece en «ip addr» desde Termux; ifconfig sí
+  tailscale_ip="$(ifconfig 2>/dev/null | grep -oE 'inet (addr:)?100\.[0-9.]+' | grep -oE '100\.[0-9.]+' | head -1)" || tailscale_ip=""
+fi
+
 mode_name="$(mode_read_state)"
 mem_kb="$(mode_mem_available_kb)"
 mem_gib="$(mode_mem_available_gib)"
@@ -69,6 +74,16 @@ radarr_run=0; curl -sf -m 2 "http://127.0.0.1:7878/" >/dev/null 2>&1 && radarr_r
 sonarr_run=0; curl -sf -m 2 "http://127.0.0.1:8989/" >/dev/null 2>&1 && sonarr_run=1
 prowlarr_run=0; curl -sf -m 2 "http://127.0.0.1:9696/" >/dev/null 2>&1 && prowlarr_run=1
 qbit_run=0; curl -sf -m 2 "http://127.0.0.1:8090/" >/dev/null 2>&1 && qbit_run=1
+# Minecraft: solo si corre (server list ping local, ~0,1 s)
+mc_run=0; mc_json="null"
+if pgrep -f '[D]gt2.minecraft=1' >/dev/null 2>&1; then
+  mc_run=1
+  if [[ -x "${HOME}/bin/mc-server" ]]; then
+    mc_json="$(timeout 8 "${HOME}/bin/mc-server" status --json 2>/dev/null | tail -1)" || mc_json="null"
+    if command -v jq >/dev/null 2>&1 && ! jq -e . >/dev/null 2>&1 <<<"$mc_json"; then mc_json="null"; fi
+    [[ -z "$mc_json" ]] && mc_json="null"
+  fi
+fi
 
 # --- LLM: runtime (llm-common) + /metrics (requiere --metrics; router: ?model=<cargado>) ---
 LLM_RT="${HOME}/.cache/llm/runtime.env"
@@ -163,6 +178,7 @@ cat >"$tmp" <<EOF
     "radarr": { "port": 7878, "running": $([ "$radarr_run" -eq 1 ] && echo true || echo false), "optional": true, "modes": ["media-stack"] },
     "sonarr": { "port": 8989, "running": $([ "$sonarr_run" -eq 1 ] && echo true || echo false), "optional": true, "modes": ["media-stack"] },
     "prowlarr": { "port": 9696, "running": $([ "$prowlarr_run" -eq 1 ] && echo true || echo false), "optional": true, "modes": ["media-stack"] },
+    "minecraft": { "port": ${MC_PORT:-25565}, "running": $([ "$mc_run" -eq 1 ] && echo true || echo false), "modes": ["gaming"], "note": "Java Edition (Paper)", "detail": ${mc_json} },
     "qbit": { "port": 8090, "running": $([ "$qbit_run" -eq 1 ] && echo true || echo false), "optional": true, "modes": ["media-stack"] }
   }
 }

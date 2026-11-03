@@ -71,7 +71,7 @@ Patrón recurrente en 2024–2026:
 | NetHunter kernel / ROM | Fases 0–7, WSL | Bloqueado en dispositivo actual |
 | Hardware alternativo | [alternative-devices.md](alternative-devices.md) | — |
 | Media server / fotos / domótica | Matriz §3; mutex RAM: [phone-tuning.md § E](phone-tuning.md#e-mantener-el-rol-principal-política-operativa) | Jellyfin operativo; *Arr*+qBit **experimento:** [media-stack-phone.md](media-stack-phone.md) (Torrentio + FlareSolverr en móvil; Jackett/PC § futuro) |
-| **Minecraft servidor** (Java / Bedrock) | Matriz §3, §3.3 | **Futuro:** modo `gaming` — [service-modes-design.md](service-modes-design.md) |
+| **Minecraft servidor** (Java / Bedrock) | Matriz §3, §3.3 | **Operativo:** `mode gaming` — [minecraft-java.md](minecraft-java.md) |
 | **Backlog ampliaciones** (ntfy, Gitea, gaming ligero, etc.) | **§4** (autónomas vs NAS/sync) | Solo documentación; sin scripts salvo lo ya operativo |
 | Always-on 24/7 / batería | **[always-on-battery.md](always-on-battery.md)** + [phone-tuning.md § Carga 24/7 / § E](phone-tuning.md), [termux-boot-services.md](termux-boot-services.md) | — |
 
@@ -134,7 +134,9 @@ Orden de prioridad recomendado en **8 GB**:
 
 ---
 
-### 3.3 Minecraft en el RMX3311 — valoración (punto a futuro)
+### 3.3 Minecraft en el RMX3311 — valoración
+
+**Implementado (2026-11-03):** `mode gaming` + `mc-server` (Paper, Java 25, runit) — guía **[minecraft-java.md](minecraft-java.md)**. Servidor vacío: «Done» en ~12–16 s, 20 TPS, ~1,4–1,6 GB RSS.
 
 **Veredicto:** **Sí como ampliación opcional**, alineada con Plan B (Termux sin root), **no** como rol principal del repo ni concurrente con el LLM.
 
@@ -147,7 +149,7 @@ Orden de prioridad recomendado en **8 GB**:
 | Termal / ColorOS | Carga sostenida CPU → throttle; enchufado + [always-on-battery.md](always-on-battery.md); riesgo de kill como en Kali → wake-lock y modo dedicado | Igual o peor |
 | Almacenamiento | JAR + mundo + logs ~1–3 GiB | Similar + Debian proot si no se reutiliza el de Kali |
 
-**Recomendación de diseño:** implementar como **`mode gaming`** (futuro en [service-modes-design.md](service-modes-design.md)): `pkill llama-server`, `termux-wake-lock`, arrancar Paper con flags acotados, opcional unidad runit bajo demanda. **Paper** o **Purpur** mejor que vanilla en CPU móvil. Clientes Bedrock: **Geyser** sobre el servidor Java, no BDS+Box64 salvo requisito estricto.
+**Recomendación de diseño (ya aplicada):** **`mode gaming`** ([service-modes-design.md](service-modes-design.md)): `pkill llama-server`, `termux-wake-lock`, arrancar Paper con flags acotados, opcional unidad runit bajo demanda. **Paper** o **Purpur** mejor que vanilla en CPU móvil. Clientes Bedrock: **Geyser** sobre el servidor Java, no BDS+Box64 salvo requisito estricto.
 
 **No objetivos:** hosting público 24/7 de muchos jugadores, modpacks pesados, servidor MC **con** SmolLM3 u otro modelo cargado a la vez.
 

@@ -1,0 +1,14 @@
+# ~/.config/gt2-minecraft/minecraft.conf — opciones de mc-server (servidor Minecraft Java / Paper)
+# Líneas CLAVE=valor; las variables de entorno tienen prioridad (p. ej. MC_XMX=3G mc-server start).
+MC_DIR=~/minecraft/paper    # directorio del servidor (mundo, plugins, logs)
+MC_XMS=2560M                # heap inicial (sin AlwaysPreTouch la RAM se reserva bajo demanda)
+MC_XMX=2560M                # heap máximo: 2560M deja ~0,8 GB al sistema con 8 GB; 3G solo sin nada más
+MC_PORT=25565
+MC_VERSION=auto             # auto = última versión SUPPORTED con build STABLE (API fill.papermc.io v3)
+MC_PRETOUCH=0               # 1 = -XX:+AlwaysPreTouch (Aikar; reserva todo el heap al arrancar, más lento)
+#MC_JAVA_OPTS_EXTRA=        # flags extra de la JVM
+MC_GEYSER=0                 # 1 = mc-server install también instala Geyser + Floodgate (Bedrock, UDP 19132)
+MC_BACKUP_KEEP=5            # backups a conservar en ~/minecraft/backups
+MC_BACKUP_ON_STOP=0         # 1 = backup automático al salir de mode gaming
+MC_STOP_TIMEOUT=120         # s esperando a que «stop» guarde y salga antes de SIGTERM
+MC_START_TIMEOUT=600        # s esperando «Done» (el primer arranque genera el mundo: varios min)

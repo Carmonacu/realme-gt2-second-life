@@ -23,7 +23,7 @@ Escucha en la **IP Tailscale** (`100.x`, interfaz `tun*`), no en toda la Wi‑Fi
 Tras `adb push` del repo a `/sdcard/Download/llm-setup/`:
 
 ```bash
-cp -f ~/storage/shared/Download/llm-setup/{llm,llm-common.sh,run-smol.sh,run-router.sh,run-qwen3b-spec.sh,ssh-setup.sh,kali,kali-common.sh,kali-update,kali-uninstall,mode,mode-lib.sh,portal-status.sh,power-lib.sh,charge-limiter,thermal-guard,gt2-screen} ~/bin/
+cp -f ~/storage/shared/Download/llm-setup/{llm,llm-common.sh,run-smol.sh,run-router.sh,run-qwen3b-spec.sh,ssh-setup.sh,kali,kali-common.sh,kali-update,kali-uninstall,mode,mode-lib.sh,portal-status.sh,power-lib.sh,charge-limiter,thermal-guard,gt2-screen,mc-server} ~/bin/
 chmod +x ~/bin/*
 ```
 
@@ -145,6 +145,17 @@ gt2-screen status | on | off | keep-on | connect
 ```
 
 El puerto de conexión cambia al reiniciar: se redescubre solo (escaneo 30000–50000, ~14 s) y se cachea en `~/.cache/gt2/adb-port`. Si dice «no hay conexión ADB»: reactiva la Depuración inalámbrica (el emparejamiento se conserva). Guía: [`docs/termux-llm-guide.md` § Pantalla y rendimiento](../../docs/termux-llm-guide.md#pantalla-y-rendimiento).
+
+## 14. Minecraft Java (Paper) — `mode gaming`
+
+```bash
+mc-server install            # Java 25 + Paper estable (API fill.papermc.io v3, sha256) + runit «minecraft»
+mode gaming                  # para LLM/Jellyfin/qBittorrent, pantalla on, arranca Paper (espera «Done»)
+mc-server status | op <nick> | cmd "tps" | console | logs -f | backup | update | geyser install
+mode media                   # para Minecraft limpio («stop» por consola) y vuelve Jellyfin
+```
+
+Conectar (Java 26.3): `100.127.134.111:25565` por Tailscale. Config: `~/.config/gt2-minecraft/minecraft.conf` ([`minecraft.conf.example`](minecraft.conf.example)). Guía: [`docs/minecraft-java.md`](../../docs/minecraft-java.md).
 
 ## 13. Batería: limitador de carga + guardián térmico (opt-in)
 

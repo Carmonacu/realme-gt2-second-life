@@ -116,7 +116,7 @@ install_bin() {
 src_dir="$SETUP_DIR"
 [[ -f "${SETUP_DIR}/termux/llm-common.sh" ]] && src_dir="${SETUP_DIR}/termux"
 installed=()
-for mf in llm llm-common.sh mode mode-lib.sh portal-status.sh power-lib.sh charge-limiter thermal-guard gt2-screen; do
+for mf in llm llm-common.sh mode mode-lib.sh portal-status.sh power-lib.sh charge-limiter thermal-guard gt2-screen mc-server; do
   msrc="${SETUP_DIR}/${mf}"
   [[ -f "${SETUP_DIR}/termux/${mf}" ]] && msrc="${SETUP_DIR}/termux/${mf}"
   if [[ -f "$msrc" ]]; then
@@ -143,6 +143,19 @@ if [[ ! -f "$POWER_CONF_DST" && -f "$(cfg_src power.conf.example)" ]]; then
 fi
 if [[ -f "$(cfg_src llm.conf.example)" ]]; then
   tr -d '\r' <"$(cfg_src llm.conf.example)" >"${HOME}/.llm.conf.example"
+fi
+MC_CONF_DST="${HOME}/.config/gt2-minecraft/minecraft.conf"
+if [[ ! -f "$MC_CONF_DST" && -f "$(cfg_src minecraft.conf.example)" ]]; then
+  mkdir -p "$(dirname "$MC_CONF_DST")"
+  tr -d '\r' <"$(cfg_src minecraft.conf.example)" >"$MC_CONF_DST"
+  echo "    creado $MC_CONF_DST (heap 2560M; Minecraft: mc-server install)"
+fi
+# Servicio runit «minecraft» (siempre deshabilitado: lo arranca mode gaming)
+MC_RUN_SRC="$(cfg_src services/minecraft/run)"
+if [[ -f "$MC_RUN_SRC" ]]; then
+  mkdir -p "${SVDIR}/minecraft/log"
+  tr -d '\r' <"$MC_RUN_SRC" >"${SVDIR}/minecraft/run" && chmod +x "${SVDIR}/minecraft/run"
+  pgrep -f '[D]gt2.minecraft=1' >/dev/null 2>&1 || touch "${SVDIR}/minecraft/down"
 fi
 
 # ¿runsv supervisa ya el servicio? Sin él, sv imprime «warning: unable to open …/supervise/ok»

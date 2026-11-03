@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # Perfiles de servicio mutuamente excluyentes (Plan B v1).
-# Uso: mode status | llm | idle | pentest | media | light-stack | lab | apply <modo>
+# Uso: mode status | llm | idle | pentest | media | light-stack | lab | gaming | apply <modo>
 
 set -euo pipefail
 export PATH="${HOME}/bin:${PREFIX}/bin:${PATH}"
@@ -29,6 +29,8 @@ Comandos:
   media               Jellyfin on, LLM off
   light-stack         mosquitto + node-red (+ syncthing si existe)
   lab                 LLM off; udocker manual (sin QEMU auto)
+  gaming              Minecraft Java (Paper, mc-server): para LLM/Jellyfin/qBittorrent, pantalla on,
+                      wake-lock; al salir de gaming se para limpio (MC_BACKUP_ON_STOP=1 = backup)
   apply <modo>        Igual que el subcomando (p. ej. boot)
 
 Variables:
@@ -108,7 +110,7 @@ main_unlocked() {
   case "$cmd" in
     status) cmd_status ;;
     apply) cmd_apply "$@" ;;
-    llm|idle|media|light-stack|lab)
+    llm|idle|media|light-stack|lab|gaming)
       mode_apply_unlocked "$cmd"
       ;;
     pentest) cmd_pentest "$@" ;;

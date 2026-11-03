@@ -145,7 +145,8 @@
       radarr: 'Radarr',
       sonarr: 'Sonarr',
       prowlarr: 'Prowlarr',
-      qbit: 'qBittorrent'
+      qbit: 'qBittorrent',
+      minecraft: 'Minecraft Java'
     };
 
     function baseUrl(data) {
@@ -158,6 +159,7 @@
     function serviceUrl(data, key, svc) {
       if (key === 'ssh') return null;
       if (key === 'mosquitto') return null;
+      if (key === 'minecraft') return null;
       const b = baseUrl(data);
       const path = svc.path || '/';
       return b + ':' + svc.port + path;
@@ -166,7 +168,7 @@
     function renderQuickLinks(data) {
       const el = document.getElementById('quick-links');
       el.innerHTML = '';
-      const order = ['jellyfin', 'radarr', 'sonarr', 'prowlarr', 'qbit', 'portal', 'llm', 'node_red', 'ssh'];
+      const order = ['jellyfin', 'minecraft', 'radarr', 'sonarr', 'prowlarr', 'qbit', 'portal', 'llm', 'node_red', 'ssh'];
       order.forEach(key => {
         const svc = data.services[key];
         if (!svc) return;
@@ -184,6 +186,10 @@
           a.textContent = running ? 'Abrir' : 'Abrir (puede estar apagado)';
           a.target = '_blank';
           right.appendChild(a);
+        } else if (key === 'minecraft') {
+          const d = svc.detail && svc.detail.ping;
+          right.innerHTML = '<span class="meta"><code>' + (data.tailscale_ip || '100.x') + ':' + svc.port + '</code>'
+            + (d ? ' · ' + d.version + ' · ' + d.online + '/' + d.max + ' jugadores' : '') + '</span>';
         } else if (key === 'ssh') {
           right.innerHTML = '<span class="meta"><code>ssh -p 8022 u0_aNNN@' + (data.tailscale_ip || '100.x') + '</code></span>';
         }

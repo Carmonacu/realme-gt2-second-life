@@ -26,7 +26,7 @@ pkg update -y
 pkg upgrade -y
 
 echo "[2/6] Paquetes base (termux-tools incluye termux-wake-lock)..."
-pkg install -y termux-tools curl jq termux-api android-tools   # android-tools: gt2-screen (self-ADB)
+pkg install -y termux-tools curl jq termux-api android-tools python   # android-tools: gt2-screen · python: mc-server ping
 
 echo "[3/6] Instalando llama.cpp b12017 (benchmarks del dispositivo)..."
 mkdir -p "${HOME}/opt/llama-b12017"
@@ -140,3 +140,8 @@ echo "  llm smol"
 echo ""
 echo "ColorOS: Ajustes → Opciones de desarrollador → Desactivar restricciones de procesos hijo"
 echo "Guía: docs/termux-llm-guide.md (en el repo del PC)"
+
+# Minecraft Java (opcional, ~55 MB + Java ~200 MB): BOOTSTRAP_MINECRAFT=1 bash bootstrap.sh
+if [[ "${BOOTSTRAP_MINECRAFT:-0}" == "1" && -x "${HOME}/bin/mc-server" ]]; then
+  "${HOME}/bin/mc-server" install
+fi
