@@ -97,7 +97,7 @@ echo "  Inferencia: $MODEL_NATIVE | copia SD: $MODEL_SRC"
 
 echo "[5/6] Scripts en ~/bin..."
 mkdir -p "${HOME}/bin"
-for f in llm llm-common.sh run-smol.sh run-qwen3b.sh run-qwen05.sh run-ds15.sh run-phi.sh mode mode-lib.sh kali kali-common.sh; do
+for f in llm llm-common.sh run-smol.sh run-qwen3b.sh run-qwen05.sh run-ds15.sh run-phi.sh run-router.sh run-qwen3b-spec.sh mode mode-lib.sh kali kali-common.sh power-lib.sh charge-limiter thermal-guard; do
   if [[ -f "$SETUP_DIR/$f" ]]; then
     cp "$SETUP_DIR/$f" "${HOME}/bin/$f"
     chmod +x "${HOME}/bin/$f"

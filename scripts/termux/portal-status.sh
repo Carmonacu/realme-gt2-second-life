@@ -70,6 +70,70 @@ sonarr_run=0; curl -sf -m 2 "http://127.0.0.1:8989/" >/dev/null 2>&1 && sonarr_r
 prowlarr_run=0; curl -sf -m 2 "http://127.0.0.1:9696/" >/dev/null 2>&1 && prowlarr_run=1
 qbit_run=0; curl -sf -m 2 "http://127.0.0.1:8090/" >/dev/null 2>&1 && qbit_run=1
 
+# --- LLM: runtime (llm-common) + /metrics (requiere --metrics; router: ?model=<cargado>) ---
+LLM_RT="${HOME}/.cache/llm/runtime.env"
+llm_rt_get() { [[ -f "$LLM_RT" ]] && sed -n "s/^$1=//p" "$LLM_RT" | head -1; return 0; }
+llm_mode_json="null"; llm_model_json="null"; llm_kv_json="null"; llm_metrics_json="null"
+if [[ "$llm_run" -eq 1 && -f "$LLM_RT" ]]; then
+  llm_mode_json="\"$(json_escape "$(llm_rt_get LLM_RUNTIME_SERVER_MODE)")\""
+  llm_kv_json="\"$(json_escape "$(llm_rt_get LLM_RUNTIME_KV)")\""
+  llm_model_json="\"$(json_escape "$(llm_rt_get LLM_RUNTIME_MODEL)")\""
+  llm_host="$(llm_rt_get LLM_RUNTIME_HOST)"; [[ -z "$llm_host" || "$llm_host" == "0.0.0.0" ]] && llm_host=127.0.0.1
+  llm_port="$(llm_rt_get LLM_RUNTIME_PORT)"; llm_port="${llm_port:-8080}"
+  llm_auth=()
+  if [[ "$(llm_rt_get LLM_RUNTIME_REMOTE)" == "1" && -r "${HOME}/.llm-api-key" ]]; then
+    llm_auth=(-H "Authorization: Bearer $(head -1 "${HOME}/.llm-api-key" | tr -d '[:space:]')")
+  fi
+  if [[ "${llm_host}:${llm_port}" != "127.0.0.1:8080" ]] && curl -sf -m 2 "http://${llm_host}:${llm_port}/health" >/dev/null 2>&1; then
+    llm_ok=1   # --remote escucha en la IP Tailscale, no en 127.0.0.1
+  fi
+  if [[ "$(llm_rt_get LLM_RUNTIME_METRICS)" == "1" ]] && command -v jq >/dev/null 2>&1; then
+    murl="http://${llm_host}:${llm_port}/metrics"
+    loaded="none"
+    if [[ "$(llm_rt_get LLM_RUNTIME_SERVER_MODE)" == "router" ]]; then
+      loaded="$(curl -sf -m 3 "${llm_auth[@]}" "http://${llm_host}:${llm_port}/models" 2>/dev/null \
+        | jq -r '[.data[] | select(.status.value=="loaded" or .status.value=="sleeping")] | first | "\(.id) \(.status.value)"' 2>/dev/null || true)"
+      [[ -z "$loaded" || "$loaded" == "null"* ]] && loaded="none"
+      if [[ "$loaded" != "none" ]]; then
+        llm_model_json="\"$(json_escape "${loaded%% *}")\""
+        murl="${murl}?model=${loaded%% *}"
+      else
+        llm_model_json="null"
+      fi
+    fi
+    if [[ "$(llm_rt_get LLM_RUNTIME_SERVER_MODE)" != "router" || "$loaded" != "none" ]]; then
+      # Contadores acumulados (los gauges *_tokens_seconds se reinician en cada lectura de /metrics)
+      llm_metrics_json="$(curl -sf -m 3 "${llm_auth[@]}" "$murl" 2>/dev/null | awk -v st="${loaded#* }" '
+        /^llamacpp:tokens_predicted_total / { n=$2 } /^llamacpp:tokens_predicted_seconds_total / { ns=$2 }
+        /^llamacpp:prompt_tokens_total / { pn=$2 } /^llamacpp:prompt_seconds_total / { ps=$2 }
+        /^llamacpp:predicted_tokens_seconds / { g=$2 } /^llamacpp:requests_processing / { r=$2 }
+        /^llamacpp:spec_decode_num_draft_tokens_total / { d=$2 } /^llamacpp:spec_decode_num_accepted_tokens_total / { a=$2 }
+        END { if (n == "") exit 1
+              printf "{\"gen_tok_s\":%.2f,\"prompt_tok_s\":%.2f,\"recent_gen_tok_s\":%.2f,\"requests_processing\":%d,\"tokens_predicted_total\":%d",
+                (ns > 0 ? n / ns : 0), (ps > 0 ? pn / ps : 0), g + 0, r + 0, n + 0
+              if (d > 0) printf ",\"draft_acceptance\":%.3f", a / d
+              if (st == "sleeping") printf ",\"sleeping\":true"
+              printf "}" }' 2>/dev/null || echo null)"
+      [[ -z "$llm_metrics_json" ]] && llm_metrics_json="null"
+    fi
+  fi
+fi
+
+# --- Energía: cachés de charge-limiter / thermal-guard (no llama a Termux:API aquí) ---
+PWR="${HOME}/.cache/gt2-power"
+json_file_or_null() {
+  if [[ -s "$1" ]] && { ! command -v jq >/dev/null 2>&1 || jq -e . "$1" >/dev/null 2>&1; }; then
+    tr -d '\n' <"$1"
+  else
+    echo null
+  fi
+}
+battery_json="$(json_file_or_null "$PWR/battery.json")"
+charge_json="$(json_file_or_null "$PWR/charge-state.json")"
+thermal_json="$(json_file_or_null "$PWR/thermal.json")"
+plug_json="null"
+[[ -s "$PWR/plug_state" ]] && plug_json="\"$(json_escape "$(head -1 "$PWR/plug_state")")\""
+
 ts_ip_json="null"
 [[ -n "$tailscale_ip" ]] && ts_ip_json="\"$(json_escape "$tailscale_ip")\""
 
@@ -88,10 +152,11 @@ cat >"$tmp" <<EOF
   "tailscale_host_hint": "realme-gt-2",
   "portal_port": ${PORTAL_PORT:-8081},
   "heavy_processes": ${heavy_json},
+  "power": { "battery": ${battery_json}, "charge_limiter": ${charge_json}, "plug_state": ${plug_json}, "thermal": ${thermal_json} },
   "services": {
     "portal": { "port": ${PORTAL_PORT:-8081}, "running": $([ "$portal_run" -eq 1 ] && echo true || echo false), "path": "/" },
     "ssh": { "port": 8022, "running": $([ "$sshd_run" -eq 1 ] && echo true || echo false), "note": "Termux OpenSSH, solo clave" },
-    "llm": { "port": 8080, "running": $([ "$llm_run" -eq 1 ] && echo true || echo false), "health_ok": $([ "$llm_ok" -eq 1 ] && echo true || echo false), "path": "/", "api_path": "/v1", "modes": ["llm"] },
+    "llm": { "port": 8080, "running": $([ "$llm_run" -eq 1 ] && echo true || echo false), "health_ok": $([ "$llm_ok" -eq 1 ] && echo true || echo false), "path": "/", "api_path": "/v1", "modes": ["llm"], "server_mode": ${llm_mode_json}, "model": ${llm_model_json}, "kv_cache": ${llm_kv_json}, "metrics": ${llm_metrics_json} },
     "jellyfin": { "port": 8096, "running": $([ "$jf_run" -eq 1 ] && echo true || echo false), "path": "/web/", "modes": ["media"] },
     "mosquitto": { "port": 1883, "running": $([ "$mq_run" -eq 1 ] && echo true || echo false), "modes": ["light-stack"] },
     "node_red": { "port": 1880, "running": $([ "$nr_run" -eq 1 ] && echo true || echo false), "path": "/", "modes": ["light-stack"] },

@@ -15,6 +15,10 @@ MODE_MIN_MEDIA_KB="${MODE_MIN_MEDIA_KB:-1572864}"
 
 MODE_VALID="llm idle pentest media light-stack lab"
 
+# Energía (charge-limiter / thermal-guard): estado compartido en ~/.cache/gt2-power
+POWER_CACHE_DIR="${POWER_CACHE_DIR:-${HOME}/.cache/gt2-power}"
+MODE_THERMAL_STATE_FILE="${MODE_THERMAL_STATE_FILE:-${POWER_CACHE_DIR}/thermal.state}"
+
 mode_mem_available_kb() {
   awk '/^MemAvailable:/ { print $2; exit }' /proc/meminfo 2>/dev/null || echo 0
 }
@@ -29,6 +33,8 @@ mode_llama_running() {
 
 mode_stop_llama() {
   if mode_llama_running; then
+    # thermal-guard puede haberlo congelado (SIGSTOP): sin SIGCONT el SIGTERM queda pendiente
+    pkill -CONT -f '/llama-server' 2>/dev/null || true
     pkill -f '/llama-server' 2>/dev/null || true
     local i
     for i in $(seq 1 15); do
@@ -148,10 +154,42 @@ mode_stop_media_stack() {
   pgrep -f '[j]ellyfin' >/dev/null 2>&1 && pkill -f '[j]ellyfin' 2>/dev/null || true
 }
 
+# charge-limiter habilitado en runit (sin fichero down) → necesita Mosquitto + Node-RED
+mode_power_needs_light_stack() {
+  local d
+  d="$(mode_svc_path charge-limiter)"
+  [[ -d "$d" && ! -f "$d/down" ]]
+}
+
 mode_stop_light_stack() {
-  mode_sv_down mosquitto
-  mode_sv_down node-red
+  if mode_power_needs_light_stack; then
+    echo "charge-limiter activo: Mosquitto + Node-RED se mantienen (limitador de carga)."
+    command -v mosquitto >/dev/null 2>&1 && mode_sv_up mosquitto
+    command -v node-red >/dev/null 2>&1 && mode_sv_up node-red
+  else
+    mode_sv_down mosquitto
+    mode_sv_down node-red
+  fi
   mode_sv_down syncthing
+}
+
+# Valor de una variable LLM_* (entorno > ~/.llm.conf > defecto) sin hacer source de llm-common
+mode_llm_conf_get() {
+  local key="$1" def="$2" val
+  if [[ -n "${!key:-}" ]]; then
+    echo "${!key}"
+    return 0
+  fi
+  val="$(sed -n "s/^[[:space:]]*${key}=[\"']\{0,1\}\([^\"' #]*\).*/\1/p" "${LLM_CONF:-${HOME}/.llm.conf}" 2>/dev/null | tail -1)"
+  echo "${val:-$def}"
+}
+
+mode_thermal_state() {
+  if [[ -f "$MODE_THERMAL_STATE_FILE" ]]; then
+    sed -n 's/^state=//p' "$MODE_THERMAL_STATE_FILE" 2>/dev/null | head -1
+  else
+    echo "normal"
+  fi
 }
 
 mode_stop_all_heavy() {
@@ -173,25 +211,55 @@ mode_require_mem() {
   return 0
 }
 
-mode_start_llm_background() {
-  # SmolLM3 vía run-smol (mismo stack que llm smol)
-  if mode_llama_running; then
-    echo "llama-server ya activo."
-    return 0
-  fi
-  mode_require_mem "$MODE_MIN_LLM_KB" "llm" || return 1
-  mode_acquire_wakelock
-  echo "==> Arrancando llm smol (nohup)..."
+mode_start_llm_single() {
+  echo "==> Arrancando llm smol (nohup, single)..."
   nohup bash -lc 'export LLM_REASONING=off; export PATH=$HOME/bin:$PREFIX/bin:$PATH; exec run-smol.sh 4096' \
     >>"${HOME}/llm-mode.log" 2>&1 &
-  local i
-  for i in $(seq 1 90); do
+}
+
+mode_wait_llm_health() {
+  local max="$1" i
+  for i in $(seq 1 "$max"); do
     if curl -sf -m 2 "http://127.0.0.1:8080/health" >/dev/null 2>&1; then
       echo "LLM listo (health OK, ~${i}s)."
       return 0
     fi
     sleep 1
   done
+  return 1
+}
+
+mode_start_llm_background() {
+  # LLM_SERVER_MODE (~/.llm.conf): router (defecto) | single (SmolLM3 fijo, comportamiento v1)
+  if mode_llama_running; then
+    echo "llama-server ya activo."
+    return 0
+  fi
+  local th
+  th="$(mode_thermal_state)"
+  if [[ "$th" != "normal" && "${MODE_IGNORE_THERMAL:-0}" != "1" ]]; then
+    echo "Error: thermal-guard en estado «$th» (batería caliente). Espera o: MODE_IGNORE_THERMAL=1 mode llm" >&2
+    return 1
+  fi
+  mode_require_mem "$MODE_MIN_LLM_KB" "llm" || return 1
+  mode_acquire_wakelock
+  local smode
+  smode="$(mode_llm_conf_get LLM_SERVER_MODE router)"
+  if [[ "$smode" == "router" ]]; then
+    echo "==> Arrancando router llama-server (nohup; modelos bajo demanda, por defecto «smol»)..."
+    nohup bash -lc 'export LLM_REASONING=off; export PATH=$HOME/bin:$PREFIX/bin:$PATH; exec run-router.sh' \
+      >>"${HOME}/llm-mode.log" 2>&1 &
+    # El router responde /health sin modelo cargado: 30 s bastan; si no, fallback a single
+    if mode_wait_llm_health 30; then
+      echo "Router: el primer mensaje carga el modelo (~10–15 s). Se descarga tras inactividad."
+      return 0
+    fi
+    echo "Aviso: router sin health en 30 s — fallback a single (run-smol.sh). Ver ~/llm-mode.log" >&2
+    mode_log_transition "$(mode_read_state)" llm "router_fallback=single"
+    mode_stop_llama || true
+  fi
+  mode_start_llm_single
+  mode_wait_llm_health 90 && return 0
   echo "Aviso: health timeout — revisa ~/llm-mode.log" >&2
   return 1
 }
@@ -308,10 +376,19 @@ mode_show_status() {
       [[ -n "$line" ]] && echo "  - $line"
     done <<<"$h"
   fi
+  local rt="${HOME}/.cache/llm/runtime.env"
+  if mode_llama_running && [[ -f "$rt" ]]; then
+    echo "llm: $(sed -n 's/^LLM_RUNTIME_SERVER_MODE=//p' "$rt") · modelo $(sed -n 's/^LLM_RUNTIME_MODEL=//p' "$rt") · KV $(sed -n 's/^LLM_RUNTIME_KV=//p' "$rt")"
+  fi
+  echo "térmica: $(mode_thermal_state)"
+  if [[ -f "${POWER_CACHE_DIR}/battery.json" ]] && command -v jq >/dev/null 2>&1; then
+    jq -r '"batería: \(.percentage)% · \(.temperature) °C · \(.plugged) (\(.status))"' \
+      "${POWER_CACHE_DIR}/battery.json" 2>/dev/null || true
+  fi
   if command -v sv >/dev/null 2>&1 && pgrep -f '[r]unsvdir' >/dev/null 2>&1; then
     mode_ensure_runsvdir
     echo "runit:"
-    for svc in sshd portal llama-smol jellyfin jellyfin-server mosquitto node-red syncthing; do
+    for svc in sshd portal llama-smol jellyfin jellyfin-server mosquitto node-red syncthing charge-limiter thermal-guard; do
       mode_svc_exists "$svc" && sv status "$svc" 2>/dev/null || true
     done
   else

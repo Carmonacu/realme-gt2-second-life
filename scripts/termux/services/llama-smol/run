@@ -1,5 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # Servicio runit opcional (RAM pesada). Deshabilitado por defecto: sv-disable llama-smol
+# LLM_SERVER_MODE (~/.llm.conf): router (defecto; todos los modelos bajo demanda, libera RAM
+# tras LLM_SLEEP_IDLE s) | single (comportamiento anterior: SmolLM3 fijo).
 exec 2>&1
 cd "$HOME" || exit 1
 export PATH="$HOME/bin:$PREFIX/bin:$PATH"
@@ -17,11 +19,22 @@ fi
 # shellcheck source=/dev/null
 source "$COMMON"
 
+termux-wake-lock 2>/dev/null || true
+
+if [[ "$LLM_SERVER_MODE" == "router" ]]; then
+  llm_run_router
+  echo "llama-smol: router no arrancó; reintento en 30 s (LLM_SERVER_MODE=single para volver al modo anterior)" >&2
+  sleep 30
+  exit 1
+fi
+
 MODEL="$LLM_MODELS/HuggingFaceTB_SmolLM3-3B-Q4_K_M.gguf"
 llm_resolve_server || exit 1
 llm_check_model "$MODEL" || exit 1
 
-termux-wake-lock 2>/dev/null || true
-
+llm_build_common_args
+THR=()
+llm_threads_args THR
+llm_write_runtime single "$(basename "$MODEL")"
 exec "$LLAMA_SERVER" -m "$MODEL" -ngl 0 --host "$LLM_HOST" --port "$LLM_PORT" \
-  --reasoning off -c 4096 -t 2 --jinja
+  --reasoning off -c 4096 -t 2 --jinja "${LLM_COMMON_ARGS[@]}" "${THR[@]}"

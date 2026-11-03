@@ -18,7 +18,7 @@
 | Binarios llama.cpp **b12017** (copia) | `/data/local/tmp/llama/` → `/sdcard/Download/llm-setup/llama-b12017/` | **Sí** — originales intactos en tmp |
 | Scripts de chat | `scripts/termux/` → `/sdcard/Download/llm-setup/` | **Sí** |
 
-**Termux:API** no es necesario; `termux-wake-lock` viene de **termux-tools** (base).
+**Termux:API** no es necesario para el LLM; `termux-wake-lock` viene de **termux-tools** (base). Solo lo usan los opcionales `charge-limiter` / `thermal-guard` ([always-on-battery.md §9](always-on-battery.md#9-limitador-de-carga-y-guardián-térmico-opt-in)).
 
 ### Deshacer tweaks adb (reversible)
 
@@ -57,7 +57,7 @@ Interfaz única para no mezclar LLM, Kali y media en 8 GB RAM. Scripts en [`scri
 ```bash
 # Tras install-boot-services.sh (copia mode → ~/bin)
 mode status
-mode llm                 # SmolLM3 (equivalente a llm smol en segundo plano)
+mode llm                 # router llama-server (todos los modelos, bajo demanda; ver § Router)
 mode idle                # para todo lo pesado
 mode pentest --shell     # para LLM + shell Kali (sin kali --force)
 mode media               # Jellyfin (install-optional-services.sh)
@@ -75,6 +75,31 @@ ssh … u0_aNNN@127.0.0.1 mode llm
 **Tras reboot:** el boot aplica **`idle`** por defecto; ejecuta **`mode llm`** cuando quieras chat. Variable opcional: `TERMUX_DEFAULT_MODE=llm` (consume RAM al arrancar).
 
 Diseño completo: [`service-modes-design.md`](service-modes-design.md).
+
+## Router, KV q8_0, especulativa y métricas (b12017)
+
+Flags verificados contra `tools/server/README.md` y el código del tag **b12017** (el mismo build que corre en el teléfono) y probados con el binario oficial `b12017` **x86_64** (no en el teléfono). Config opcional en **`~/.llm.conf`** (plantilla [`llm.conf.example`](../scripts/termux/llm.conf.example)); las variables de entorno mandan sobre el fichero.
+
+| Opción | Cómo | Qué hace |
+|--------|------|----------|
+| **Router** (defecto en `mode llm` y servicio `llama-smol`) | `llm router` · `LLM_SERVER_MODE=router` | `llama-server` sin `-m` + `--models-preset ~/.cache/llm/router-presets.ini` (generado con los GGUF presentes) + `--models-max 1` + `--sleep-idle-seconds 600`. Un endpoint :8080; el modelo se carga con la 1.ª petición y se descarga tras 10 min sin uso. |
+| Volver al modo anterior | `LLM_SERVER_MODE=single` en `~/.llm.conf` | `mode llm` / `llama-smol` = SmolLM3 fijo (`run-smol.sh`). Si el router no responde en 30 s, `mode llm` cae solo a single. |
+| **KV cache q8_0** | `LLM_KV_TYPE=q8_0` (cualquier `llm …`, router y servicio) | `-ctk q8_0 -ctv q8_0 -fa on` (la V cuantizada **exige** flash-attn en b12017; con `-fa off` falla al crear contexto). ≈ mitad de RAM de KV → más contexto (p. ej. `LLM_KV_TYPE=q8_0 llm qwen3b 8192`). |
+| **Especulativa** | `llm qwen3b-spec` · preset router `qwen3b-spec` | Qwen2.5-3B + borrador Qwen2.5-0.5B: `--model-draft … --spec-type draft-simple --spec-draft-n-max 8 --spec-draft-p-min 0.75`. En b12017 **`--draft-max`/`--draft-min` ya no existen**. +~0,5 GiB RAM. Ganancia en CPU **sin medir**. |
+| **Métricas** | `LLM_METRICS=1` (defecto) | `--metrics` → `GET /metrics` (Prometheus). En router: `/metrics?model=smol`. El portal muestra tok/s medio, modelo cargado y aceptación del borrador. |
+
+```bash
+mode llm                         # router en segundo plano (log: ~/llm-mode.log)
+llm models                       # smol / qwen3b / qwen05 / ds15 / phi / qwen3b-spec + estado
+llm unload                       # descarga ya el modelo cargado (libera RAM sin parar el router)
+curl -s http://127.0.0.1:8080/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model":"smol","messages":[{"role":"user","content":"hola"}]}'
+curl -s 'http://127.0.0.1:8080/metrics?model=smol' | grep tokens_seconds
+```
+
+**Ojo con el router:** la API **exige** el campo `"model"` (la UI web tiene selector). Con `--models-max 1`, pedir otro modelo descarga el anterior (recarga ~10–15 s). En presets fijamos `ctx-size` (sin él, `--fit` elegiría el contexto máximo y en CPU la RAM se considera ilimitada). `thermal-guard` puede forzar menos hilos con `~/.cache/llm/threads-override`.
+
+**Benchmark en el teléfono** (baseline vs KV q8_0 vs especulativa): [`scripts/bench/run-llm-variants.sh`](../scripts/bench/run-llm-variants.sh) — ver [benchmarks/rmx3311-llm.md](benchmarks/rmx3311-llm.md#variantes-router--kv-q8_0--especulativa-b12017).
 
 ### Portal homepage (puerto 8081)
 
@@ -247,7 +272,9 @@ Tras bootstrap + **reiniciar Termux**, con `allow-external-apps=true` en `~/.ter
 |------|-----|
 | [`scripts/termux/bootstrap.sh`](../scripts/termux/bootstrap.sh) | Instalación única |
 | [`scripts/termux/llm`](../scripts/termux/llm) | Menú principal |
-| [`scripts/termux/run-*.sh`](../scripts/termux/) | Un script por modelo |
+| [`scripts/termux/run-*.sh`](../scripts/termux/) | Un script por modelo (`run-router.sh`, `run-qwen3b-spec.sh` nuevos) |
+| [`scripts/termux/llm.conf.example`](../scripts/termux/llm.conf.example) | Plantilla `~/.llm.conf` (router, KV, especulativa, métricas) |
+| [`scripts/bench/run-llm-variants.sh`](../scripts/bench/run-llm-variants.sh) | Benchmark baseline / KV q8_0 / especulativa (Termux) |
 | [`scripts/termux/adb-start-llm.ps1`](../scripts/termux/adb-start-llm.ps1) | Intento adb RUN_COMMAND |
 | [`scripts/termux/ssh-setup.sh`](../scripts/termux/ssh-setup.sh) | OpenSSH en Termux (una vez) |
 | [`scripts/termux/install-boot-services.sh`](../scripts/termux/install-boot-services.sh) | Termux:Boot + runit (`sshd` al reboot) — [termux-boot-services.md](../docs/termux-boot-services.md) |

@@ -1,0 +1,539 @@
+[
+  {
+    "id": "gt2_charge_tab",
+    "type": "tab",
+    "label": "GT2 limitador de carga",
+    "disabled": false,
+    "info": "Conmuta un enchufe inteligente según gt2/power/charger/want (publicado por charge-limiter en el móvil).\n1) Edita las variables de entorno de esta pestaña (doble clic en la pestaña → Environment):\n   PLUG_TYPE = dry-run | tasmota-mqtt | tasmota-http | shelly-gen2-http | shelly-gen1-http | shelly-gen2-mqtt\n   PLUG_HOST = IP del enchufe (HTTP) · PLUG_MQTT_TOPIC = topic Tasmota o id Shelly (MQTT)\n2) Deploy. Con dry-run solo registra lo que haría.\nSeguridad: sin latido del limitador 15 min → enchufe ON (fail-safe) + alerta en gt2/power/charger/alert.",
+    "env": [
+      {
+        "name": "PLUG_TYPE",
+        "value": "dry-run",
+        "type": "str"
+      },
+      {
+        "name": "PLUG_HOST",
+        "value": "192.168.1.50",
+        "type": "str"
+      },
+      {
+        "name": "PLUG_MQTT_TOPIC",
+        "value": "tasmota_plug",
+        "type": "str"
+      }
+    ]
+  },
+  {
+    "id": "gt2_charge_broker",
+    "type": "mqtt-broker",
+    "name": "Mosquitto local (Termux)",
+    "broker": "127.0.0.1",
+    "port": "1883",
+    "clientid": "gt2-nodered-charger",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "autoUnsubscribe": true,
+    "birthTopic": "",
+    "birthQos": "0",
+    "birthRetain": "false",
+    "birthPayload": "",
+    "birthMsg": {},
+    "closeTopic": "",
+    "closeQos": "0",
+    "closeRetain": "false",
+    "closePayload": "",
+    "closeMsg": {},
+    "willTopic": "",
+    "willQos": "0",
+    "willRetain": "false",
+    "willPayload": "",
+    "willMsg": {},
+    "userProps": "",
+    "sessionExpiry": ""
+  },
+  {
+    "id": "gt2_c_comment",
+    "type": "comment",
+    "name": "Limitador de carga GT2 — edita PLUG_TYPE / PLUG_HOST / PLUG_MQTT_TOPIC en la pestaña (Environment)",
+    "info": "Ver docs/always-on-battery.md §9 del repo. Topics: gt2/power/charger/want (entrada), plug_state y alert (salida, retenidos).",
+    "x": 380,
+    "y": 40,
+    "wires": [],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_in_want",
+    "type": "mqtt in",
+    "name": "charger/want",
+    "topic": "gt2/power/charger/want",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "gt2_charge_broker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 130,
+    "y": 120,
+    "wires": [
+      [
+        "gt2_c_adapt"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_adapt",
+    "type": "function",
+    "name": "Adaptador enchufe",
+    "func": "// Normaliza: cualquier valor distinto de OFF → ON (fail-safe: seguir cargando)\nconst want = String(msg.payload).trim().toUpperCase() === 'OFF' ? 'OFF' : 'ON';\nconst on = want === 'ON';\nconst type = (env.get('PLUG_TYPE') || 'dry-run').trim();\nconst host = (env.get('PLUG_HOST') || '').trim();\nconst topic = (env.get('PLUG_MQTT_TOPIC') || 'tasmota_plug').trim();\nflow.set('wanted', want);\nflow.set('wanted_ts', Date.now());\nflow.set('wanted_reason', msg.reason || '');\nnode.status({ fill: on ? 'green' : 'grey', shape: 'dot', text: type + ': ' + want + (msg.reason ? ' (' + msg.reason + ')' : '') });\n// Salidas: 1 = comando MQTT, 2 = petición HTTP, 3 = dry-run/log\nswitch (type) {\n  case 'tasmota-mqtt':\n    return [{ topic: 'cmnd/' + topic + '/POWER', payload: want, retain: false, want }, null, null];\n  case 'shelly-gen2-mqtt':\n    return [{ topic: topic + '/command/switch:0', payload: on ? 'on' : 'off', retain: false, want }, null, null];\n  case 'tasmota-http':\n    return [null, { url: 'http://' + host + '/cm?cmnd=Power%20' + (on ? 'On' : 'Off'), want, plugType: type }, null];\n  case 'shelly-gen2-http':\n    return [null, { url: 'http://' + host + '/rpc/Switch.Set?id=0&on=' + on, want, plugType: type }, null];\n  case 'shelly-gen1-http':\n    return [null, { url: 'http://' + host + '/relay/0?turn=' + (on ? 'on' : 'off'), want, plugType: type }, null];\n  case 'dry-run':\n    return [null, null, { payload: '[dry-run] enchufe → ' + want, want }];\n  default:\n    node.warn('PLUG_TYPE desconocido: ' + type);\n    return [null, null, { payload: 'PLUG_TYPE desconocido: ' + type, want, alert: true }];\n}",
+    "outputs": 3,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 120,
+    "wires": [
+      [
+        "gt2_c_out_cmd",
+        "gt2_c_wait"
+      ],
+      [
+        "gt2_c_http",
+        "gt2_c_wait"
+      ],
+      [
+        "gt2_c_dry"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_out_cmd",
+    "type": "mqtt out",
+    "name": "comando MQTT enchufe",
+    "topic": "",
+    "qos": "1",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "gt2_charge_broker",
+    "x": 640,
+    "y": 80,
+    "wires": [],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_http",
+    "type": "http request",
+    "name": "comando HTTP enchufe",
+    "method": "GET",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 640,
+    "y": 140,
+    "wires": [
+      [
+        "gt2_c_conf_http"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_conf_http",
+    "type": "function",
+    "name": "Confirmación HTTP",
+    "func": "// Respuesta HTTP del enchufe → estado real. Salidas: 1 = plug_state, 2 = reset espera, 3 = alerta\nconst want = msg.want || flow.get('wanted') || 'ON';\n// Error de red: el nodo http request también reenvía el msg (statusCode = 'ECONNREFUSED'…);\n// la alerta ya la emite el nodo catch → aquí solo estado ERROR\nif (typeof msg.statusCode !== 'number') {\n  return [{ payload: 'ERROR' }, { reset: true }, null];\n}\nif (msg.statusCode < 200 || msg.statusCode >= 300) {\n  return [{ payload: 'ERROR' }, { reset: true }, { payload: 'Enchufe HTTP ' + msg.statusCode + ' (' + msg.url + ')' }];\n}\nlet body = msg.payload;\ntry { if (typeof body === 'string') body = JSON.parse(body); } catch (e) { body = {}; }\nlet actual = null;\nif (body && typeof body.POWER === 'string') actual = body.POWER.toUpperCase();      // Tasmota\nelse if (body && typeof body.ison === 'boolean') actual = body.ison ? 'ON' : 'OFF';  // Shelly Gen1\nelse actual = want;                                                                    // Shelly Gen2 (was_on) → asumimos orden aplicada\nif (actual !== want) {\n  return [{ payload: actual }, { reset: true }, { payload: 'Enchufe responde ' + actual + ' pero se pidió ' + want }];\n}\nreturn [{ payload: actual }, { reset: true }, null];",
+    "outputs": 3,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 880,
+    "y": 140,
+    "wires": [
+      [
+        "gt2_c_plugstate"
+      ],
+      [
+        "gt2_c_wait"
+      ],
+      [
+        "gt2_c_alert"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_dry",
+    "type": "function",
+    "name": "dry-run",
+    "func": "node.status({ fill: 'blue', shape: 'ring', text: msg.payload });\nconst out = [{ payload: 'DRYRUN-' + msg.want }, null];\nif (msg.alert) out[1] = { payload: msg.payload };\nreturn out;",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 640,
+    "y": 200,
+    "wires": [
+      [
+        "gt2_c_plugstate"
+      ],
+      [
+        "gt2_c_alert"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_in_stat",
+    "type": "mqtt in",
+    "name": "estado enchufe (Tasmota/Shelly)",
+    "topic": "stat/+/POWER",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "gt2_charge_broker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 160,
+    "y": 280,
+    "wires": [
+      [
+        "gt2_c_conf_mqtt"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_in_shelly",
+    "type": "mqtt in",
+    "name": "estado Shelly Gen2",
+    "topic": "+/status/switch:0",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "gt2_charge_broker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 150,
+    "y": 320,
+    "wires": [
+      [
+        "gt2_c_conf_mqtt"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_conf_mqtt",
+    "type": "function",
+    "name": "Confirmación MQTT",
+    "func": "// Estado publicado por el enchufe (Tasmota stat/<topic>/POWER o Shelly Gen2 <id>/status/switch:0)\nconst topic = (env.get('PLUG_MQTT_TOPIC') || 'tasmota_plug').trim();\nconst type = (env.get('PLUG_TYPE') || 'dry-run').trim();\nlet actual = null;\nif (type === 'tasmota-mqtt' && msg.topic === 'stat/' + topic + '/POWER') {\n  actual = String(msg.payload).toUpperCase();\n} else if (type === 'shelly-gen2-mqtt' && msg.topic === topic + '/status/switch:0') {\n  let p = msg.payload;\n  try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { return null; }\n  if (p && typeof p.output === 'boolean') actual = p.output ? 'ON' : 'OFF';\n}\nif (!actual) return null;\nconst want = flow.get('wanted');\nconst out = [{ payload: actual }, { reset: true }, null];\nif (want && actual !== want && Date.now() - (flow.get('wanted_ts') || 0) < 120000) {\n  out[2] = { payload: 'Enchufe informa ' + actual + ' pero se pidió ' + want };\n}\nreturn out;",
+    "outputs": 3,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 300,
+    "wires": [
+      [
+        "gt2_c_plugstate"
+      ],
+      [
+        "gt2_c_wait"
+      ],
+      [
+        "gt2_c_alert"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_wait",
+    "type": "trigger",
+    "name": "espera confirmación 30 s",
+    "op1": "",
+    "op2": "timeout",
+    "op1type": "nul",
+    "op2type": "str",
+    "duration": "30",
+    "extend": false,
+    "overrideDelay": false,
+    "units": "s",
+    "reset": "",
+    "bytopic": "all",
+    "topic": "topic",
+    "outputs": 1,
+    "x": 900,
+    "y": 240,
+    "wires": [
+      [
+        "gt2_c_timeout"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_timeout",
+    "type": "function",
+    "name": "sin confirmación",
+    "func": "return { payload: 'El enchufe no confirmó «' + (flow.get('wanted') || '?') + '» en 30 s (nodo «espera confirmación»)' };",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1120,
+    "y": 240,
+    "wires": [
+      [
+        "gt2_c_alert",
+        "gt2_c_plug_err"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_plug_err",
+    "type": "change",
+    "name": "plug_state = UNCONFIRMED",
+    "rules": [
+      {
+        "t": "set",
+        "p": "payload",
+        "pt": "msg",
+        "to": "UNCONFIRMED",
+        "tot": "str"
+      }
+    ],
+    "action": "",
+    "property": "",
+    "to": "",
+    "reg": false,
+    "x": 1150,
+    "y": 300,
+    "wires": [
+      [
+        "gt2_c_plugstate"
+      ]
+    ],
+    "z": "gt2_charge_tab",
+    "from": ""
+  },
+  {
+    "id": "gt2_c_plugstate",
+    "type": "function",
+    "name": "→ charger/plug_state",
+    "func": "return { topic: 'gt2/power/charger/plug_state', retain: true, payload: String(msg.payload) };",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1150,
+    "y": 360,
+    "wires": [
+      [
+        "gt2_c_out_state"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_out_state",
+    "type": "mqtt out",
+    "name": "publica (retained)",
+    "topic": "",
+    "qos": "1",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "gt2_charge_broker",
+    "x": 1380,
+    "y": 400,
+    "wires": [],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_in_hb",
+    "type": "mqtt in",
+    "name": "limiter/heartbeat",
+    "topic": "gt2/power/limiter/heartbeat",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "gt2_charge_broker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 150,
+    "y": 440,
+    "wires": [
+      [
+        "gt2_c_watch"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_watch",
+    "type": "trigger",
+    "name": "watchdog 15 min",
+    "op1": "",
+    "op2": "ON",
+    "op1type": "nul",
+    "op2type": "str",
+    "duration": "15",
+    "extend": true,
+    "overrideDelay": false,
+    "units": "min",
+    "reset": "",
+    "bytopic": "all",
+    "topic": "topic",
+    "outputs": 1,
+    "x": 390,
+    "y": 440,
+    "wires": [
+      [
+        "gt2_c_wdfn"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_wdfn",
+    "type": "function",
+    "name": "fail-safe ON",
+    "func": "// Sin latido del limitador → fail-safe: enchufe ON (el móvil no se queda sin batería)\nreturn [{ payload: 'ON', reason: 'watchdog' },\n        { payload: 'Sin latido de charge-limiter en 15 min → enchufe ON (fail-safe). ¿Termux/servicio caído?' }];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 600,
+    "y": 440,
+    "wires": [
+      [
+        "gt2_c_adapt"
+      ],
+      [
+        "gt2_c_alert"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_catch",
+    "type": "catch",
+    "name": "errores enchufe",
+    "scope": [
+      "gt2_c_http",
+      "gt2_c_out_cmd"
+    ],
+    "uncaught": false,
+    "x": 880,
+    "y": 460,
+    "wires": [
+      [
+        "gt2_c_alert",
+        "gt2_c_err_state"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_err_state",
+    "type": "change",
+    "name": "plug_state = ERROR",
+    "rules": [
+      {
+        "t": "set",
+        "p": "payload",
+        "pt": "msg",
+        "to": "ERROR",
+        "tot": "str"
+      }
+    ],
+    "action": "",
+    "property": "",
+    "to": "",
+    "reg": false,
+    "x": 1110,
+    "y": 500,
+    "wires": [
+      [
+        "gt2_c_plugstate"
+      ]
+    ],
+    "z": "gt2_charge_tab",
+    "from": ""
+  },
+  {
+    "id": "gt2_c_alert",
+    "type": "function",
+    "name": "→ charger/alert",
+    "func": "// Publica alerta retenida para el móvil (charge-limiter la lee y lanza termux-notification)\nconst text = msg.error ? ('Error enchufe: ' + (msg.error.message || msg.error)) : String(msg.payload);\nnode.warn(text);\nnode.status({ fill: 'red', shape: 'ring', text: text.substring(0, 40) });\nreturn { topic: 'gt2/power/charger/alert', retain: true,\n         payload: JSON.stringify({ ts: Math.floor(Date.now() / 1000), msg: text, source: 'node-red' }) };",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1150,
+    "y": 420,
+    "wires": [
+      [
+        "gt2_c_out_state",
+        "gt2_c_debug"
+      ]
+    ],
+    "z": "gt2_charge_tab"
+  },
+  {
+    "id": "gt2_c_debug",
+    "type": "debug",
+    "name": "alertas",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 1370,
+    "y": 460,
+    "wires": [],
+    "z": "gt2_charge_tab"
+  }
+]

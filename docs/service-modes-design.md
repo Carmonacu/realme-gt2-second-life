@@ -114,7 +114,7 @@ Ver explicación detallada en el mensaje al usuario (Parte 1). Resumen para dise
 | Minecraft Java (Paper) | `gaming` *(futuro)* | **Sí** — §3.3 |
 | Minetest / OpenTTD | `gaming` *(futuro)* | **Sí** |
 | whisper.cpp | `stt` *(futuro)* | **Sí** |
-| ntfy / Gotify | `light-stack` | No |
+| ntfy / Gotify | `light-stack` | No — hook `~/.config/gt2-power/notify-hook` ya previsto |
 | Uptime Kuma / Healthchecks | `light-stack` | No |
 | FreshRSS / Linkding | `light-stack` | No |
 | Caddy reverse proxy | infra (runit) | No |
@@ -152,6 +152,18 @@ Backlog completo (autónomas vs NAS/sync): **[second-life-ecosystem.md §4](seco
 **Boot:** por defecto **`idle`** (solo sshd + runit). Para LLM tras reinicio: `mode llm` manual, o `export TERMUX_DEFAULT_MODE=llm` antes del boot (no recomendado con Kali/media).
 
 **Log de transiciones:** `~/storage/shared/mode-transitions.log`
+
+### v1.1 (repo, 2026-11; sin probar en el teléfono)
+
+| Cambio | Detalle |
+|--------|---------|
+| `mode llm` → **router** | `run-router.sh`: un `llama-server` en :8080 con todos los modelos como presets, `--models-max 1`, descarga tras `LLM_SLEEP_IDLE` (600 s). El proceso sigue vivo (≈ 40 MiB) pero la RAM del modelo se libera. `LLM_SERVER_MODE=single` en `~/.llm.conf` = comportamiento v1; si el router no da `/health` en 30 s, fallback automático a single (anotado en el log de transiciones). Ver [termux-llm-guide.md § Router](termux-llm-guide.md#router-kv-q8_0-especulativa-y-métricas-b12017). |
+| Servicio `llama-smol` | Respeta `LLM_SERVER_MODE` (router por defecto). |
+| **thermal-guard** | Nuevo servicio runit opcional; `mode llm` se niega si el estado térmico es `hot`/`critical`; `mode_stop_llama` envía `SIGCONT` antes de matar (por si estaba en `pause`). |
+| **charge-limiter** | Si su servicio está habilitado, `idle` / `light-stack` **mantienen Mosquitto + Node-RED** (el enchufe depende de ellos). |
+| `mode status` | Muestra modo del LLM (router/single, modelo, KV), estado térmico y batería (caché). |
+
+Detalle de energía: [always-on-battery.md § 9](always-on-battery.md#9-limitador-de-carga-y-guardián-térmico-opt-in).
 
 ---
 

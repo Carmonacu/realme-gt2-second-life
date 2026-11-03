@@ -1,0 +1,20 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Limitador de carga (MQTT → Node-RED → enchufe). Opt-in: install-boot-services.sh --enable-charge-limiter
+# Requiere: pkg install termux-api jq mosquitto + app Termux:API. Config: ~/.config/gt2-power/power.conf
+exec 2>&1
+cd "$HOME" || exit 1
+export PATH="$HOME/bin:$PREFIX/bin:$PATH"
+
+BIN="$HOME/bin/charge-limiter"
+if [[ ! -x "$BIN" ]]; then
+  echo "charge-limiter: falta $BIN — ejecuta install-boot-services.sh" >&2
+  sleep 60
+  exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo "charge-limiter: falta jq (pkg install jq)" >&2
+  sleep 300
+  exit 1
+fi
+termux-wake-lock 2>/dev/null || true
+exec "$BIN" run

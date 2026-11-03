@@ -22,7 +22,8 @@ Uso: mode <comando>
 
 Comandos:
   status              Modo actual, RAM y procesos pesados
-  llm                 Para media/lab; arranca SmolLM3 (llm smol vía nohup)
+  llm                 Para media/lab; arranca el router llama-server (modelos bajo demanda,
+                      descarga tras inactividad). LLM_SERVER_MODE=single → SmolLM3 fijo (v1)
   idle                Todo lo pesado off
   pentest [--shell]   Para LLM; prepara Kali (sin kali --force)
   media               Jellyfin on, LLM off
@@ -32,6 +33,7 @@ Comandos:
 
 Variables:
   TERMUX_DEFAULT_MODE   idle | llm (boot; ver install-boot-services.sh)
+  MODE_IGNORE_THERMAL=1 mode llm aunque thermal-guard esté en hot/critical
 
 Ejemplos:
   mode status

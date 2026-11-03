@@ -1,0 +1,282 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Guardián térmico para el LLM: si la batería pasa de THERMAL_HIGH_C (histéresis hasta
+# THERMAL_RESUME_C) aplica THERMAL_ACTION a llama-server y lo restaura al enfriar.
+#   throttle  reinicia con menos hilos (THERMAL_THREADS) vía ~/.cache/llm/threads-override
+#   pause     congela llama-server (SIGSTOP) y lo reanuda (SIGCONT) — conserva RAM y modelo
+#   stop      para el LLM; al enfriar vuelve a «mode llm» si el modo sigue siendo llm
+# ≥ THERMAL_CRIT_C: stop siempre. Uso: thermal-guard run | once | status | reset
+set -euo pipefail
+export PATH="${HOME}/bin:${PREFIX:-/data/data/com.termux/files/usr}/bin:${PATH}"
+
+for lib in power-lib.sh mode-lib.sh; do
+  found=""
+  for d in "$HOME/bin" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; do
+    if [[ -f "$d/$lib" ]]; then
+      # shellcheck source=/dev/null
+      source "$d/$lib"
+      found=1
+      break
+    fi
+  done
+  [[ -n "$found" ]] || { echo "Error: falta $lib en ~/bin" >&2; exit 1; }
+done
+
+THERMAL_ENABLED="${THERMAL_ENABLED:-1}"
+THERMAL_HIGH_C="${THERMAL_HIGH_C:-40}"
+THERMAL_RESUME_C="${THERMAL_RESUME_C:-37}"
+THERMAL_CRIT_C="${THERMAL_CRIT_C:-45}"
+THERMAL_SAMPLES="${THERMAL_SAMPLES:-2}"           # lecturas seguidas para cambiar de estado
+THERMAL_INTERVAL="${THERMAL_INTERVAL:-30}"
+THERMAL_ACTION="${THERMAL_ACTION:-throttle}"      # throttle | pause | stop
+THERMAL_THREADS="${THERMAL_THREADS:-2}"
+THERMAL_AUTO_RESTART="${THERMAL_AUTO_RESTART:-1}" # tras «stop», volver a mode llm al enfriar
+
+STATE_FILE="$MODE_THERMAL_STATE_FILE"
+STATE_JSON="${POWER_CACHE_DIR}/thermal.json"
+THREADS_FILE="${HOME}/.cache/llm/threads-override"
+
+st_get() {
+  [[ -f "$STATE_FILE" ]] || return 0
+  sed -n "s/^$1=//p" "$STATE_FILE" | head -1
+}
+
+st_save() {
+  # state action restore hot_n cool_n since temp
+  power_write_file "$STATE_FILE" "state=$1
+action=$2
+restore=$3
+hot_n=$4
+cool_n=$5
+since=$6
+temp=$7"
+  power_write_file "$STATE_JSON" "$(jq -nc --arg s "$1" --arg a "$2" --arg r "$3" --arg t "$7" \
+    --argjson since "${6:-0}" --argjson ts "$(power_now)" --arg high "$THERMAL_HIGH_C" \
+    --arg resume "$THERMAL_RESUME_C" --arg crit "$THERMAL_CRIT_C" --arg act "$THERMAL_ACTION" \
+    '{state:$s, action:$a, restore:$r, temperature:($t|tonumber? // null), since:$since, ts:$ts,
+      high_c:($high|tonumber), resume_c:($resume|tonumber), crit_c:($crit|tonumber), configured_action:$act}')"
+  power_mqtt_pub thermal/state "$(cat "$STATE_JSON")" >/dev/null 2>&1 || true
+}
+
+# Máximo de hilos entre procesos llama-server (single: -t N; hijos del router: --threads N)
+llama_max_threads() {
+  local m=0 n
+  while IFS= read -r n; do
+    [[ "$n" =~ ^[0-9]+$ && "$n" -gt "$m" ]] && m="$n"
+  done < <(pgrep -af '/llama-server' 2>/dev/null | grep -oE '(^| )(-t|--threads) [0-9]+' | awk '{print $NF}')
+  echo "$m"
+}
+
+llama_has_model_loaded() {
+  # Router sin hijos = ningún modelo cargado (no genera calor)
+  pgrep -af '/llama-server' 2>/dev/null | grep -qE '(^| )(-m|--model) '
+}
+
+svc_llama_up() {
+  command -v sv >/dev/null 2>&1 || return 1
+  mode_svc_exists llama-smol || return 1
+  [[ ! -f "$(mode_svc_path llama-smol)/down" ]] && sv status llama-smol 2>/dev/null | grep -q '^run:'
+}
+
+# Cómo relanzar el LLM: service | mode | manual
+llama_origin() {
+  if svc_llama_up; then echo service
+  elif [[ "$(mode_read_state)" == "llm" ]]; then echo mode
+  else echo manual
+  fi
+}
+
+llama_restart() {
+  local origin="$1"
+  case "$origin" in
+    service) sv restart llama-smol >/dev/null 2>&1 || true ;;
+    mode)
+      mode_stop_llama || true
+      MODE_IGNORE_THERMAL=1 bash "${HOME}/bin/mode" apply llm >/dev/null 2>&1 || \
+        power_log thermal "mode apply llm falló al reiniciar"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+apply_action() {
+  local temp="$1" action="$THERMAL_ACTION" origin
+  origin="$(llama_origin)"
+  if [[ "$action" == "throttle" ]]; then
+    local cur
+    cur="$(llama_max_threads)"
+    if [[ "$cur" -gt 0 && "$cur" -le "$THERMAL_THREADS" ]]; then
+      action=pause   # ya usa ≤ THERMAL_THREADS hilos (p. ej. SmolLM3 -t 2): reducir no ayuda
+    elif [[ "$origin" == "manual" ]]; then
+      action=pause   # lanzado a mano en primer plano (llm …): no se puede relanzar
+    fi
+  fi
+  case "$action" in
+    throttle)
+      mkdir -p "$(dirname "$THREADS_FILE")"
+      echo "$THERMAL_THREADS" >"$THREADS_FILE"
+      llama_restart "$origin" || true
+      ;;
+    pause)
+      pkill -STOP -f '/llama-server' 2>/dev/null || true
+      ;;
+    stop)
+      if [[ "$origin" == "service" ]]; then mode_sv_down llama-smol; fi
+      mode_stop_llama || true
+      ;;
+  esac
+  power_log thermal "batería ${temp} °C ≥ ${THERMAL_HIGH_C} → ${action} (origen ${origin})"
+  power_notify thermal-hot "Guardián térmico" \
+    "Batería ${temp} °C: LLM ${action} (reanuda ≤ ${THERMAL_RESUME_C} °C)" high --force
+  CUR_ACTION="$action"
+  CUR_RESTORE="$origin"
+}
+
+restore_action() {
+  local temp="$1" action="$2" origin="$3"
+  case "$action" in
+    pause) pkill -CONT -f '/llama-server' 2>/dev/null || true ;;
+    throttle)
+      rm -f "$THREADS_FILE"
+      if mode_llama_running; then llama_restart "$origin" || true; fi
+      ;;
+    stop)
+      if [[ "$THERMAL_AUTO_RESTART" == "1" ]]; then
+        case "$origin" in
+          service) mode_sv_up llama-smol ;;
+          mode)
+            if [[ "$(mode_read_state)" == "llm" ]] && ! mode_llama_running; then
+              bash "${HOME}/bin/mode" apply llm >/dev/null 2>&1 || power_log thermal "mode apply llm falló"
+            fi
+            ;;
+        esac
+      fi
+      ;;
+  esac
+  rm -f "$THREADS_FILE"
+  local what="LLM restaurado (${action})"
+  if [[ "$action" == "stop" && ( "$origin" == "manual" || "$THERMAL_AUTO_RESTART" != "1" ) ]]; then
+    what="LLM sigue parado (relánzalo: mode llm / llm …)"
+  fi
+  power_log thermal "batería ${temp} °C ≤ ${THERMAL_RESUME_C} → ${what}"
+  power_notify thermal-ok "Guardián térmico" "Batería ${temp} °C: ${what}" default --force
+}
+
+cycle() {
+  local verbose="${1:-0}"
+  if ! power_battery_read; then
+    power_notify thermal-read "Guardián térmico" "No se puede leer la temperatura (¿Termux:API?)" high
+    return 1
+  fi
+  power_notify_reset thermal-read
+  local temp state action restore hot_n cool_n since now
+  temp="$(power_bat_field temperature)"
+  now="$(power_now)"
+  state="$(st_get state)"; state="${state:-normal}"
+  action="$(st_get action)"; action="${action:-none}"
+  restore="$(st_get restore)"; restore="${restore:-none}"
+  hot_n="$(st_get hot_n)"; hot_n="${hot_n:-0}"
+  cool_n="$(st_get cool_n)"; cool_n="${cool_n:-0}"
+  since="$(st_get since)"; since="${since:-0}"
+
+  if power_ge "$temp" "$THERMAL_HIGH_C"; then hot_n=$((hot_n + 1)); else hot_n=0; fi
+  if power_le "$temp" "$THERMAL_RESUME_C"; then cool_n=$((cool_n + 1)); else cool_n=0; fi
+
+  if [[ "$THERMAL_ENABLED" != "1" ]]; then
+    if [[ "$state" != "normal" ]]; then restore_action "$temp" "$action" "$restore"; fi
+    st_save normal none none 0 0 0 "$temp"
+    return 0
+  fi
+
+  # El usuario cambió de modo / paró el LLM mientras estaba mitigado → olvidar
+  if [[ "$state" != "normal" && "$action" != "stop" && "$action" != "none" ]] && ! mode_llama_running; then
+    rm -f "$THREADS_FILE"
+    action=none
+  fi
+  if [[ "$state" != "normal" && "$action" == "stop" && "$restore" == "mode" && "$(mode_read_state)" != "llm" ]]; then
+    action=none
+  fi
+
+  CUR_ACTION="$action"
+  CUR_RESTORE="$restore"
+  if power_ge "$temp" "$THERMAL_CRIT_C" && [[ "$hot_n" -ge "$THERMAL_SAMPLES" ]]; then
+    if [[ "$state" != "critical" ]]; then
+      [[ "$state" == "normal" ]] && since="$now"
+      if mode_llama_running; then
+        local origin
+        origin="$(llama_origin)"
+        [[ "$action" == "none" || "$restore" == "none" ]] || origin="$restore"
+        [[ "$origin" == "service" ]] && mode_sv_down llama-smol
+        mode_stop_llama || true
+        CUR_ACTION=stop
+        CUR_RESTORE="$origin"
+      fi
+      power_log thermal "CRÍTICO ${temp} °C ≥ ${THERMAL_CRIT_C} → LLM parado"
+      power_notify thermal-crit "Guardián térmico" "CRÍTICO: batería ${temp} °C — LLM parado. Revisa ventilación/carga." high --force
+      state=critical
+    fi
+  elif [[ "$state" == "normal" && "$hot_n" -ge "$THERMAL_SAMPLES" ]]; then
+    state=hot
+    since="$now"
+    if mode_llama_running && llama_has_model_loaded; then
+      apply_action "$temp"
+    else
+      power_log thermal "batería ${temp} °C (sin modelo LLM cargado; vigilando)"
+    fi
+  elif [[ "$state" == "hot" && "$CUR_ACTION" == "none" ]] && mode_llama_running && llama_has_model_loaded; then
+    apply_action "$temp"   # el LLM arrancó / cargó modelo estando caliente
+  elif [[ "$state" != "normal" && "$cool_n" -ge "$THERMAL_SAMPLES" ]]; then
+    [[ "$CUR_ACTION" != "none" ]] && restore_action "$temp" "$CUR_ACTION" "$CUR_RESTORE"
+    [[ "$CUR_ACTION" == "none" ]] && power_log thermal "batería ${temp} °C: vuelta a normal"
+    state=normal; CUR_ACTION=none; CUR_RESTORE=none; since=0
+  fi
+
+  st_save "$state" "$CUR_ACTION" "$CUR_RESTORE" "$hot_n" "$cool_n" "$since" "$temp"
+  if [[ "$verbose" == "1" ]]; then
+    echo "batería ${temp} °C · estado ${state} · acción ${CUR_ACTION} · origen ${CUR_RESTORE} · hot_n ${hot_n} cool_n ${cool_n}"
+  fi
+}
+
+on_exit() {
+  trap - EXIT INT TERM
+  # Nunca dejar el LLM congelado ni con hilos reducidos si el guardián se para
+  local action
+  action="$(st_get action)"
+  if [[ "$action" == "pause" ]]; then pkill -CONT -f '/llama-server' 2>/dev/null || true; fi
+  rm -f "$THREADS_FILE"
+  power_log thermal "parado (acción pendiente: ${action:-none} → liberada)"
+  exit 0
+}
+
+cmd_run() {
+  power_require_jq || exit 1
+  power_log thermal "inicio: ≥${THERMAL_HIGH_C} °C → ${THERMAL_ACTION} (hilos ${THERMAL_THREADS}), ≤${THERMAL_RESUME_C} restaura, ≥${THERMAL_CRIT_C} stop, cada ${THERMAL_INTERVAL}s"
+  trap on_exit EXIT INT TERM
+  local n=0
+  while true; do
+    cycle 0 || true
+    n=$((n + 1))
+    # Portal: refresca status.json cada ~5 min (y en cada cambio vía mode)
+    if (( n % 10 == 0 )); then power_portal_refresh; fi
+    sleep "$THERMAL_INTERVAL" &
+    wait $! || true
+  done
+}
+
+case "${1:-status}" in
+  run) cmd_run ;;
+  once) power_require_jq || exit 1; cycle 1 ;;
+  status)
+    echo "=== thermal-guard ==="
+    echo "umbral ≥ ${THERMAL_HIGH_C} °C → ${THERMAL_ACTION} (hilos ${THERMAL_THREADS}) · restaura ≤ ${THERMAL_RESUME_C} °C · crítico ≥ ${THERMAL_CRIT_C} °C"
+    cat "$STATE_JSON" 2>/dev/null || echo "(sin estado aún)"
+    [[ -f "$THREADS_FILE" ]] && echo "hilos LLM limitados a: $(cat "$THREADS_FILE")"
+    ;;
+  reset)
+    action="$(st_get action)"
+    [[ "$action" == "pause" ]] && pkill -CONT -f '/llama-server' 2>/dev/null
+    rm -f "$THREADS_FILE" "$STATE_FILE"
+    echo "Estado térmico reiniciado (LLM reanudado si estaba congelado)."
+    ;;
+  help|-h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) echo "Uso: thermal-guard run | once | status | reset" >&2; exit 1 ;;
+esac

@@ -23,7 +23,7 @@ Escucha en la **IP Tailscale** (`100.x`, interfaz `tun*`), no en toda la Wi‑Fi
 Tras `adb push` del repo a `/sdcard/Download/llm-setup/`:
 
 ```bash
-cp -f ~/storage/shared/Download/llm-setup/{llm,llm-common.sh,run-smol.sh,ssh-setup.sh,kali,kali-common.sh,kali-update,kali-uninstall,mode,mode-lib.sh,portal-status.sh} ~/bin/
+cp -f ~/storage/shared/Download/llm-setup/{llm,llm-common.sh,run-smol.sh,run-router.sh,run-qwen3b-spec.sh,ssh-setup.sh,kali,kali-common.sh,kali-update,kali-uninstall,mode,mode-lib.sh,portal-status.sh,power-lib.sh,charge-limiter,thermal-guard} ~/bin/
 chmod +x ~/bin/*
 ```
 
@@ -78,7 +78,7 @@ Perfiles mutuamente excluyentes (LLM ↔ Jellyfin ↔ Kali). Tras copiar scripts
 
 ```bash
 mode status
-mode llm              # chat local (SmolLM3)
+mode llm              # chat local (router: modelos bajo demanda; ver § 12)
 mode idle             # todo pesado off
 mode pentest --shell  # para LLM + entra a Kali (sin kali --force)
 mode media            # Jellyfin (requiere install-optional-services.sh)
@@ -119,7 +119,35 @@ Una página con enlaces, modos, modelos y `status.json` en vivo (~5 MiB nginx).
 bash ~/storage/shared/Download/llm-setup/install-portal.sh
 ```
 
-Guía: [`docs/portal-homepage.md`](../../docs/portal-homepage.md). Tras `mode …`, el JSON se actualiza solo.
+Guía: [`docs/portal-homepage.md`](../../docs/portal-homepage.md). Tras `mode …`, el JSON se actualiza solo (y cada ~5 min si `thermal-guard` está activo). Muestra batería, enchufe y tok/s del LLM (`--metrics`).
+
+## 12. LLM router, KV q8_0, especulativa (b12017)
+
+`mode llm` arranca ahora un **router** (todos los modelos en :8080, carga bajo demanda, se descarga tras 10 min sin uso). Config: `cp ~/.llm.conf.example ~/.llm.conf` (o [`llm.conf.example`](llm.conf.example)).
+
+```bash
+llm router                     # primer plano (mode llm = segundo plano)
+llm models                     # estado de cada modelo
+llm unload                     # liberar RAM ya
+LLM_KV_TYPE=q8_0 llm qwen3b 8192
+llm qwen3b-spec                # Qwen 3B + borrador 0.5B
+echo 'LLM_SERVER_MODE=single' >> ~/.llm.conf   # volver al comportamiento anterior
+```
+
+API en router: el JSON **debe** llevar `"model": "smol"` (o `qwen3b`, `qwen3b-spec`, …). Guía: [`docs/termux-llm-guide.md`](../../docs/termux-llm-guide.md#router-kv-q8_0-especulativa-y-métricas-b12017). Benchmark: `bash run-llm-variants.sh` (copiar desde `scripts/bench/`).
+
+## 13. Batería: limitador de carga + guardián térmico (opt-in)
+
+Requiere **Termux:API** (F-Droid) y Mosquitto + Node-RED (`install-optional-services.sh`).
+
+```bash
+bash ~/storage/shared/Download/llm-setup/install-boot-services.sh --enable-charge-limiter --enable-thermal-guard
+charge-limiter once && charge-limiter status
+thermal-guard once && thermal-guard status
+charge-limiter force off | force on | force auto
+```
+
+Node-RED → Import `~/storage/shared/Download/llm-setup/node-red/charge-limiter-flow.json` (empieza en `dry-run`; ajusta `PLUG_TYPE`/`PLUG_HOST`). Umbrales en `~/.config/gt2-power/power.conf`. Detalle y topics: [`docs/always-on-battery.md` § 9](../../docs/always-on-battery.md#9-limitador-de-carga-y-guardián-térmico-opt-in).
 
 ---
 

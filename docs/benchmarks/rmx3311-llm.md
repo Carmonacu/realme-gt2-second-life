@@ -126,10 +126,31 @@ Log: [`runs/20261031-144004-sustained-SmolLM3-3B-t2-300s.log`](runs/20261031-144
 | [`scripts/bench/run-peak-rss.sh`](../../scripts/bench/run-peak-rss.sh) | VmHWM + meminfo |
 | [`scripts/bench/run-sustained.sh`](../../scripts/bench/run-sustained.sh) | Bucle térmico |
 | [`scripts/bench/cleanup-device.ps1`](../../scripts/bench/cleanup-device.ps1) | Borra modelos en tmp (opcional) |
+| [`scripts/bench/run-llm-variants.sh`](../../scripts/bench/run-llm-variants.sh) | **Termux** (no adb): KV q8_0 vs especulativa — ver abajo |
 
 Binarios PC: `downloads/llama-android/` (gitignored).
 
 ---
+
+## Variantes: router / KV q8_0 / especulativa (b12017)
+
+**Pendiente de ejecutar en el teléfono.** Script en Termux (usa `~/models` y `~/opt/llama-b12017`, no `/data/local/tmp`):
+
+```powershell
+adb -s YOUR_ADB_SERIAL push scripts/bench/run-llm-variants.sh /sdcard/Download/llm-setup/
+```
+
+```bash
+mode idle                                   # sin llama-server activo (o --stop-llm)
+bash ~/storage/shared/Download/llm-setup/run-llm-variants.sh            # ~25–40 min con cooldowns
+bash ~/storage/shared/Download/llm-setup/run-llm-variants.sh --skip-bench --reps 1   # solo parte B
+```
+
+- **A (llama-bench):** Qwen2.5-3B `-t 4`, pp512/tg128 a profundidad 0 y 2048: `base` · `-fa 1` · `-fa 1 -ctk q8_0 -ctv q8_0`.
+- **B (llama-server `/completion`, greedy):** `base` · `kv-q8` · `spec` (borrador 0.5B) · `spec-kv-q8`; tok/s, aceptación del borrador (`timings.draft_n_accepted`), pico VmHWM.
+- Logs: `/sdcard/Download/llm-bench-runs/<ts>-llm-variants/` (`summary.md` + un log por variante). PC: `adb pull /sdcard/Download/llm-bench-runs/. docs/benchmarks/runs/`.
+
+Smoke test del script en PC x86_64 con b12017 (sin valor para el teléfono): funciona de punta a punta; en CPU x86 la KV q8_0 bajó pp a profundidad 2048 — **medir en SD888 antes de recomendarla**.
 
 ## GPU (OpenCL / Vulkan)
 

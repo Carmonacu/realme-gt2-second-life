@@ -47,6 +47,7 @@ Se regenera automáticamente:
 
 - Tras cada **`mode llm|idle|media|…`** (hook en `mode-lib.sh`).
 - Al arrancar el servicio **portal** (runit).
+- Cada ~5 min desde **`thermal-guard`** y en cada cambio de **`charge-limiter`** (si están activos).
 
 Manual:
 
@@ -55,6 +56,8 @@ bash ~/bin/portal-status.sh
 ```
 
 Contenido: modo actual, `MemAvailable`, IP Tailscale (`100.x` si existe), procesos pesados y flags `running` / `health_ok` por servicio. **No** incluye la API key del LLM.
+
+Desde v1.1 también: `llm.server_mode` (router/single), modelo cargado, `kv_cache` y `llm.metrics` (tok/s de generación y prompt calculados con los contadores acumulados de `/metrics`, aceptación del borrador si hay especulativa) + bloque `power` (batería, enchufe, estado térmico) leído de `~/.cache/gt2-power/`. Pills **Batería / Enchufe / LLM** en la cabecera.
 
 La página refresca el JSON cada **30 s** en el navegador.
 

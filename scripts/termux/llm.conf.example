@@ -1,0 +1,24 @@
+# ~/.llm.conf — opciones de llama-server (b12017) para llm / mode llm / servicio llama-smol
+# Solo líneas LLM_*=valor. Las variables de entorno tienen prioridad (p. ej. LLM_KV_TYPE=q8_0 llm qwen3b).
+
+# Servidor de «mode llm» y del servicio llama-smol:
+#   router = un endpoint :8080, todos los modelos como presets, carga bajo demanda (defecto)
+#   single = comportamiento anterior (SmolLM3 fijo con run-smol.sh)
+LLM_SERVER_MODE=router
+LLM_MODELS_MAX=1            # router: modelos cargados a la vez (8 GB → 1)
+LLM_SLEEP_IDLE=600          # router: s sin peticiones → descarga el modelo de RAM (-1 = nunca)
+LLM_SINGLE_SLEEP_IDLE=-1    # igual para «llm <modelo>» (single); -1 = comportamiento anterior
+LLM_ROUTER_DEFAULT_MODEL=smol
+LLM_ROUTER_MODELS_DIR=0     # 1 = además lista todos los GGUF de ~/models con su nombre de fichero
+
+# KV cache: f16 (defecto) | q8_0 (≈ mitad de RAM de contexto; activa --flash-attn on)
+LLM_KV_TYPE=f16
+LLM_FLASH_ATTN=auto         # auto | on | off (ignorado con KV cuantizada: siempre on)
+
+LLM_METRICS=1               # --metrics → /metrics (Prometheus) y tok/s en el portal
+
+# Especulativa (llm qwen3b-spec / preset router «qwen3b-spec»)
+LLM_SPEC_DRAFT_N_MAX=8
+LLM_SPEC_DRAFT_N_MIN=0
+LLM_SPEC_DRAFT_P_MIN=0.75
+#LLM_SPEC_THREADS_DRAFT=2
