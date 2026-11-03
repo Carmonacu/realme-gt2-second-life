@@ -134,7 +134,24 @@ Binarios PC: `downloads/llama-android/` (gitignored).
 
 ## Variantes: router / KV q8_0 / especulativa (b12017)
 
-**Pendiente de ejecutar en el teléfono.** Script en Termux (usa `~/models` y `~/opt/llama-b12017`, no `/data/local/tmp`):
+### Resultados 2026-11-03 (teléfono, condiciones degradadas)
+
+Condiciones: teléfono en segundo plano vía SSH, Jellyfin parado, `-t 4`, ctx 4096, generación de 120 tokens, temp 0 (greedy), `llama-server` b12017.
+
+| Variante | Prompt (tok/s) | Generación (tok/s) |
+|----------|---------------:|-------------------:|
+| Qwen2.5-3B Q4_K_M · KV f16 (base) | 2,08 | 2,84 |
+| Qwen2.5-3B · KV q8_0 + flash-attn | 4,29 | 2,87 |
+| Qwen2.5-3B + borrador Qwen2.5-0.5B (especulativa, n-max 8, p-min 0,75) | 4,29 | 2,86 (sin ganancia) |
+| SmolLM3-3B | 4,26 | 2,60 |
+
+**Ojo — no sacar conclusiones todavía:** todo está muy por debajo de lo medido antes (~9,6 tok/s SmolLM3, ~6,9 tok/s Qwen2.5-3B). Durante la prueba: `cpu4` (núcleos medios) con `scaling_max_freq` limitado a **1,44 GHz**, **1,7 GB de swap** usados y **load avg ~8** → probablemente throttling de ColorOS en segundo plano / pantalla apagada. **Repetir con la pantalla encendida y Termux en primer plano** antes de decidir sobre especulativa o KV q8_0.
+
+Router: **no probado** — el binario b12017 del teléfono no lo soporta (`subprocess is not enabled on this build`, ver [termux-llm-guide.md](../termux-llm-guide.md#router-no-disponible-con-el-binario-empaquetado-prueba-2026-11-03)).
+
+### Cómo repetir
+
+Script en Termux (usa `~/models` y `~/opt/llama-b12017`, no `/data/local/tmp`):
 
 ```powershell
 adb -s YOUR_ADB_SERIAL push scripts/bench/run-llm-variants.sh /sdcard/Download/llm-setup/

@@ -19,6 +19,7 @@ Router (un endpoint, carga bajo demanda, descarga tras inactividad):
   router   Todos los modelos anteriores como presets; «model»: "smol" en la API
   models   Lista modelos del router y su estado (loaded/sleeping/unloaded)
   unload   Descarga ya los modelos cargados del router (libera RAM)
+  router-check  ¿Admite este llama-server el router? (0 sí · 1 no: build sin subprocess · 2 ?)
 
 Opciones:
   --remote   Escucha en la IP Tailscale (tun*/100.x) si está activa; si no, falla salvo
@@ -87,6 +88,18 @@ case "$MODEL" in
   router)
     [[ -n "$CTX" ]] && export LLM_ROUTER_CTX="$CTX"
     exec "$BIN/run-router.sh"
+    ;;
+  router-check)
+    # shellcheck source=llm-common.sh
+    source "$BIN/llm-common.sh"
+    rc=0
+    llm_router_check || rc=$?
+    case "$rc" in
+      0) echo "router: soportado ($LLAMA_SERVER)" ;;
+      1) echo "router: NO soportado — build sin subprocess (-DLLAMA_SUBPROCESS=ON); ver docs/termux-llm-guide.md" ;;
+      *) echo "router: indeterminado (sonda sin respuesta en ${LLM_ROUTER_PROBE_TIMEOUT}s; log: $LLM_CACHE_DIR/router-probe.log)" ;;
+    esac
+    exit "$rc"
     ;;
   models|unload)
     # shellcheck source=llm-common.sh

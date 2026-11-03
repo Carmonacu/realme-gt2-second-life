@@ -126,12 +126,33 @@ mode_svc_exists() {
   [[ -d "$(mode_svc_path "$1")" ]]
 }
 
+# ¿Hay un runsv supervisando el servicio? (sin él, «sv status» imprime
+# «warning: unable to open .../supervise/ok» por stdout)
+mode_svc_supervised() {
+  local d
+  d="$(mode_svc_path "$1")"
+  [[ -e "$d/supervise/ok" ]] && pgrep -f "[r]unsv $1\$" >/dev/null 2>&1
+}
+
+mode_sv_status() {
+  local svc="$1"
+  if mode_svc_supervised "$svc"; then
+    sv status "$svc" 2>/dev/null || true
+  elif [[ -f "$(mode_svc_path "$svc")/down" ]]; then
+    echo "${svc}: deshabilitado"
+  else
+    echo "${svc}: deshabilitado (sin runsv)"
+  fi
+  return 0
+}
+
 mode_sv_up() {
   local svc="$1"
   mode_ensure_runsvdir
   mode_svc_exists "$svc" || return 0
   rm -f "$(mode_svc_path "$svc")/down" 2>/dev/null || true
-  if command -v sv >/dev/null 2>&1; then
+  # Sin runsv aún (servicio recién creado): runsvdir lo arranca en ≤5 s al no haber «down»
+  if command -v sv >/dev/null 2>&1 && mode_svc_supervised "$svc"; then
     sv up "$svc" 2>/dev/null || true
   fi
 }
@@ -140,8 +161,8 @@ mode_sv_down() {
   local svc="$1"
   mode_ensure_runsvdir
   mode_svc_exists "$svc" || return 0
-  if command -v sv >/dev/null 2>&1; then
-    sv down "$svc" 2>/dev/null || true
+  if command -v sv >/dev/null 2>&1 && mode_svc_supervised "$svc"; then
+    sv down "$svc" >/dev/null 2>&1 || true
   fi
   touch "$(mode_svc_path "$svc")/down" 2>/dev/null || true
 }
@@ -217,20 +238,39 @@ mode_start_llm_single() {
     >>"${HOME}/llm-mode.log" 2>&1 &
 }
 
+mode_llm_port() {
+  mode_llm_conf_get LLM_PORT 8080
+}
+
+# mode_wait_llm_health <s> [log] [offset]: espera /health; si se da log, sale al momento (rc 3)
+# cuando aparece «subprocess is not enabled on this build» tras el byte offset.
 mode_wait_llm_health() {
-  local max="$1" i
+  local max="$1" log="${2:-}" off="${3:-0}" i port
+  port="$(mode_llm_port)"
   for i in $(seq 1 "$max"); do
-    if curl -sf -m 2 "http://127.0.0.1:8080/health" >/dev/null 2>&1; then
+    if curl -sf -m 2 "http://127.0.0.1:${port}/health" >/dev/null 2>&1; then
       echo "LLM listo (health OK, ~${i}s)."
       return 0
+    fi
+    if [[ -n "$log" ]] && tail -c +"$((off + 1))" "$log" 2>/dev/null \
+        | grep -q 'subprocess is not enabled on this build'; then
+      return 3
     fi
     sleep 1
   done
   return 1
 }
 
+mode_router_unsupported_msg() {
+  echo "Aviso: el modo router no está disponible con este llama-server (paquete de Termux compilado" >&2
+  echo "  sin soporte de subprocesos: «subprocess is not enabled on this build»). Se usa single (SmolLM3)." >&2
+  echo "  Router: compila llama.cpp desde el código fuente con -DLLAMA_SUBPROCESS=ON o usa llama-swap" >&2
+  echo "  (docs/termux-llm-guide.md). Para no intentarlo: echo 'LLM_SERVER_MODE=single' >> ~/.llm.conf" >&2
+}
+
 mode_start_llm_background() {
   # LLM_SERVER_MODE (~/.llm.conf): router (defecto) | single (SmolLM3 fijo, comportamiento v1)
+  # Si el build no soporta router (paquete Termux), cae a single al momento con aviso.
   if mode_llama_running; then
     echo "llama-server ya activo."
     return 0
@@ -243,19 +283,41 @@ mode_start_llm_background() {
   fi
   mode_require_mem "$MODE_MIN_LLM_KB" "llm" || return 1
   mode_acquire_wakelock
-  local smode
+  local smode log="${HOME}/llm-mode.log"
   smode="$(mode_llm_conf_get LLM_SERVER_MODE router)"
   if [[ "$smode" == "router" ]]; then
+    # Comprobación de capacidad (cacheada por binario): evita esperar 30 s a un router que no existe
+    local cap=0
+    if [[ -x "${HOME}/bin/llm" ]]; then
+      "${HOME}/bin/llm" router-check >/dev/null 2>&1 || cap=$?
+    fi
+    if [[ "$cap" == "1" ]]; then
+      mode_router_unsupported_msg
+      mode_log_transition "$(mode_read_state)" llm "router_fallback=single reason=no_subprocess"
+      smode=single
+    fi
+  fi
+  if [[ "$smode" == "router" ]]; then
     echo "==> Arrancando router llama-server (nohup; modelos bajo demanda, por defecto «smol»)..."
-    nohup bash -lc 'export LLM_REASONING=off; export PATH=$HOME/bin:$PREFIX/bin:$PATH; exec run-router.sh' \
-      >>"${HOME}/llm-mode.log" 2>&1 &
+    local off=0
+    [[ -f "$log" ]] && off="$(wc -c <"$log" 2>/dev/null | tr -d ' ')"
+    # LLM_ROUTER_NO_FALLBACK=1: si falla, run-router.sh no lanza single él mismo (lo hace mode)
+    nohup bash -lc 'export LLM_REASONING=off LLM_ROUTER_NO_FALLBACK=1; export PATH=$HOME/bin:$PREFIX/bin:$PATH; exec run-router.sh' \
+      >>"$log" 2>&1 &
     # El router responde /health sin modelo cargado: 30 s bastan; si no, fallback a single
-    if mode_wait_llm_health 30; then
+    local rc=0
+    mode_wait_llm_health 30 "$log" "${off:-0}" || rc=$?
+    if [[ "$rc" == "0" ]]; then
       echo "Router: el primer mensaje carga el modelo (~10–15 s). Se descarga tras inactividad."
       return 0
     fi
-    echo "Aviso: router sin health en 30 s — fallback a single (run-smol.sh). Ver ~/llm-mode.log" >&2
-    mode_log_transition "$(mode_read_state)" llm "router_fallback=single"
+    if [[ "$rc" == "3" ]]; then
+      mode_router_unsupported_msg
+      mode_log_transition "$(mode_read_state)" llm "router_fallback=single reason=no_subprocess"
+    else
+      echo "Aviso: router sin health en 30 s — fallback a single (run-smol.sh). Ver ~/llm-mode.log" >&2
+      mode_log_transition "$(mode_read_state)" llm "router_fallback=single"
+    fi
     mode_stop_llama || true
   fi
   mode_start_llm_single
@@ -389,7 +451,7 @@ mode_show_status() {
     mode_ensure_runsvdir
     echo "runit:"
     for svc in sshd portal llama-smol jellyfin jellyfin-server mosquitto node-red syncthing charge-limiter thermal-guard; do
-      mode_svc_exists "$svc" && sv status "$svc" 2>/dev/null || true
+      if mode_svc_exists "$svc"; then mode_sv_status "$svc"; fi
     done
   else
     echo "runit: runsvdir inactivo (normal fuera de boot / start-services)"

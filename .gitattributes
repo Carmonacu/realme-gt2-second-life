@@ -1,0 +1,20 @@
+# Scripts que se ejecutan en Termux/Linux: siempre LF (con core.autocrlf=true en Windows
+# un CRLF rompe bash: «$'\r': command not found», shebang inválido, etc.)
+*.sh            text eol=lf
+*.py            text eol=lf
+*.ini           text eol=lf
+*.conf.example  text eol=lf
+*.example       text eol=lf
+
+# Scripts sin extensión (scripts/termux y servicios runit)
+scripts/termux/llm                  text eol=lf
+scripts/termux/mode                 text eol=lf
+scripts/termux/charge-limiter       text eol=lf
+scripts/termux/thermal-guard        text eol=lf
+scripts/termux/media-stack          text eol=lf
+scripts/termux/kali                 text eol=lf
+scripts/termux/kali-update          text eol=lf
+scripts/termux/kali-uninstall       text eol=lf
+scripts/termux/qbit-prune           text eol=lf
+scripts/termux/boot/start-services  text eol=lf
+scripts/termux/services/*/run       text eol=lf

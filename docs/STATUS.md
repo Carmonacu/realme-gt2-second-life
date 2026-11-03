@@ -1,6 +1,6 @@
 # Project status (execution)
 
-Last verified: **2026-10-31** (Termux LLM + SSH on **YOUR_ADB_SERIAL**; **Termux:Boot + reboot test OK** — `sshd` sin abrir Termux; Tailscale no auto-arrancó tras reboot — ver abajo).
+Last verified: **2026-11-03** (router/KV/especulativa en teléfono; ver fila LLM router) · antes **2026-10-31** (Termux LLM + SSH on **YOUR_ADB_SERIAL**; **Termux:Boot + reboot test OK** — `sshd` sin abrir Termux; Tailscale no auto-arrancó tras reboot — ver abajo).
 
 ## Plan B on device (audit 2026-10-31)
 
@@ -13,7 +13,7 @@ SSH read-only audit via ADB + forward **8022**. Repo docs vs **this phone**:
 | **Always-on / § E rol principal** | [always-on-battery.md](always-on-battery.md), [phone-tuning.md § E](phone-tuning.md#e-mantener-el-rol-principal-política-operativa) | **`~/bin/mode` v1** — boot `idle`; log `~/storage/shared/mode-transitions.log` |
 | Jellyfin / Node-RED / Mosquitto / udocker | [service-modes-design.md](service-modes-design.md) · [jellyfin-media.md](jellyfin-media.md) | **Instalados**; runit **`services/jellyfin/run`** (`DOTNET_ROOT=$PREFIX/lib/dotnet`); **HTTP 302/200** en :8096; **`mode media`** activo; **media de prueba** en `~/storage/shared/Movies`: `BigBuckBunny_320x180.mp4` (~62 MiB), `sintel_trailer-1080p.mp4` (~14 MiB); **asistente Jellyfin pendiente** |
 | **Control `mode`** | [termux-llm-guide.md](termux-llm-guide.md) | Operativo en teléfono |
-| **LLM router + KV q8_0 + especulativa + métricas** (b12017) | [termux-llm-guide.md § Router](termux-llm-guide.md#router-kv-q8_0-especulativa-y-métricas-b12017) · bench `scripts/bench/run-llm-variants.sh` | **Solo repo** — flags verificados en código b12017 y probados con binario b12017 x86_64; **pendiente** en teléfono + benchmark SD888 |
+| **LLM router + KV q8_0 + especulativa + métricas** (b12017) | [termux-llm-guide.md § Router](termux-llm-guide.md#router-kv-q8_0-especulativa-y-métricas-b12017) · bench `scripts/bench/run-llm-variants.sh` · [rmx3311-llm.md](benchmarks/rmx3311-llm.md#variantes-router--kv-q8_0--especulativa-b12017) | **Probado en teléfono 2026-11-03:** **router NO usable** con el binario empaquetado (`subprocess is not enabled on this build`: llama.cpp para Android se compila con `LLAMA_SUBPROCESS=OFF`) → los scripts caen a single al momento. Opciones: compilar llama.cpp en Termux con `-DLLAMA_SUBPROCESS=ON` (sin probar) o proxy **llama-swap**. KV q8_0 y especulativa funcionan; medición de hoy con el teléfono limitado (cpu4 a 1,44 GHz) — **repetir** con pantalla encendida |
 | **charge-limiter + thermal-guard** (opt-in) | [always-on-battery.md § 9](always-on-battery.md#9-limitador-de-carga-y-guardián-térmico-opt-in) | **Solo repo** — falta Termux:API en el teléfono, importar flujo Node-RED y elegir enchufe |
 
 **Next on device (order):** **Tailscale (app Android):** tras reboot abrir la app o activar VPN always-on (no usar solo `tailscaled` de Termux). **Jellyfin:** completar asistente en `http://<tailscale-ip>:8096/web/` y añadir biblioteca `…/storage/shared/Movies` ([jellyfin-media.md](jellyfin-media.md)). Reinstalar runit Jellyfin: `bash install-optional-services.sh` o copiar `services/jellyfin/run`.

@@ -104,27 +104,76 @@ if [[ -f "$MODE_BOOT" ]]; then
   echo "==> Referencia boot/00-mode-apply.sh (opcional; por defecto integrado en start-services)"
 fi
 
-echo "==> mode + LLM router + energía → ~/bin"
+echo "==> llm + mode + energía → ~/bin"
 mkdir -p "${HOME}/bin"
-for mf in mode mode-lib.sh llm llm-common.sh run-router.sh run-qwen3b-spec.sh portal-status.sh \
-  power-lib.sh charge-limiter thermal-guard; do
+# Copia defensiva: quita CR por si el repo se empujó desde Windows con CRLF
+install_bin() {
+  local src="$1" dst
+  dst="${HOME}/bin/$(basename "$1")"
+  tr -d '\r' <"$src" >"${dst}.tmp" && mv -f "${dst}.tmp" "$dst"
+  chmod +x "$dst" 2>/dev/null || true
+}
+src_dir="$SETUP_DIR"
+[[ -f "${SETUP_DIR}/termux/llm-common.sh" ]] && src_dir="${SETUP_DIR}/termux"
+installed=()
+for mf in llm llm-common.sh mode mode-lib.sh portal-status.sh power-lib.sh charge-limiter thermal-guard; do
   msrc="${SETUP_DIR}/${mf}"
   [[ -f "${SETUP_DIR}/termux/${mf}" ]] && msrc="${SETUP_DIR}/termux/${mf}"
   if [[ -f "$msrc" ]]; then
-    cp -f "$msrc" "${HOME}/bin/${mf}"
-    chmod +x "${HOME}/bin/${mf}" 2>/dev/null || true
+    install_bin "$msrc"; installed+=("$mf")
+  else
+    echo "    AVISO: falta ${mf} en ${SETUP_DIR}" >&2
   fi
 done
+# Todos los lanzadores run-*.sh (run-smol, run-qwen3b, run-router, run-qwen3b-spec, …)
+shopt -s nullglob
+for msrc in "$src_dir"/run-*.sh; do
+  install_bin "$msrc"; installed+=("$(basename "$msrc")")
+done
+shopt -u nullglob
+echo "    ${installed[*]}"
 
 # Plantillas de config (no se sobrescriben)
 cfg_src() { if [[ -f "${SETUP_DIR}/termux/$1" ]]; then echo "${SETUP_DIR}/termux/$1"; else echo "${SETUP_DIR}/$1"; fi; }
 POWER_CONF_DST="${HOME}/.config/gt2-power/power.conf"
 if [[ ! -f "$POWER_CONF_DST" && -f "$(cfg_src power.conf.example)" ]]; then
   mkdir -p "$(dirname "$POWER_CONF_DST")"
-  cp "$(cfg_src power.conf.example)" "$POWER_CONF_DST"
+  tr -d '\r' <"$(cfg_src power.conf.example)" >"$POWER_CONF_DST"
   echo "    creado $POWER_CONF_DST (umbrales 80 %/45 %, 40 °C)"
 fi
-[[ -f "$(cfg_src llm.conf.example)" ]] && cp -f "$(cfg_src llm.conf.example)" "${HOME}/.llm.conf.example"
+if [[ -f "$(cfg_src llm.conf.example)" ]]; then
+  tr -d '\r' <"$(cfg_src llm.conf.example)" >"${HOME}/.llm.conf.example"
+fi
+
+# ¿runsv supervisa ya el servicio? Sin él, sv imprime «warning: unable to open …/supervise/ok»
+svc_supervised() {
+  [[ -e "${SVDIR}/$1/supervise/ok" ]] && pgrep -f "[r]unsv $1\$" >/dev/null 2>&1
+}
+svc_disable() {
+  local name="$1"
+  touch "${SVDIR}/${name}/down"
+  if svc_supervised "$name"; then
+    sv down "$name" >/dev/null 2>&1 || true
+  fi
+}
+svc_enable() {
+  local name="$1"
+  rm -f "${SVDIR}/${name}/down"
+  # Sin runsv aún: runsvdir lo detecta en ≤5 s y lo arranca (no hay «down»)
+  if svc_supervised "$name"; then
+    sv up "$name" 2>/dev/null || true
+  fi
+}
+svc_status() {
+  local name="$1"
+  if svc_supervised "$name"; then
+    sv status "$name" 2>/dev/null || true
+  elif [[ -f "${SVDIR}/${name}/down" ]]; then
+    echo "${name}: deshabilitado"
+  else
+    echo "${name}: pendiente (runsvdir lo arrancará en ≤5 s)"
+  fi
+}
 
 # install_power_svc <nombre> <habilitar 0|1>
 install_power_svc() {
@@ -132,13 +181,13 @@ install_power_svc() {
   [[ -f "$src" ]] || src="${SETUP_DIR}/termux/services/$1/run"
   [[ -f "$src" ]] || { echo "    omitido $name (no hay services/$name/run)"; return 0; }
   mkdir -p "$dst"
-  cp -f "$src" "$dst/run"
+  tr -d '\r' <"$src" >"$dst/run"
   chmod +x "$dst/run"
   if [[ "$enable" == "1" ]]; then
-    sv-enable "$name" 2>/dev/null || { rm -f "$dst/down"; sv up "$name" 2>/dev/null || true; }
+    svc_enable "$name"
     echo "    $name habilitado (sv status $name)"
   else
-    sv-disable "$name" 2>/dev/null || touch "$dst/down"
+    svc_disable "$name"
     echo "    $name deshabilitado (opt-in: --enable-$name)"
   fi
 }
@@ -149,8 +198,7 @@ install_power_svc thermal-guard "$ENABLE_THERMAL"
 if [[ "$ENABLE_CHARGE" == "1" ]]; then
   for dep in mosquitto node-red; do
     if [[ -d "${SVDIR}/${dep}" ]]; then
-      rm -f "${SVDIR}/${dep}/down"
-      sv up "$dep" 2>/dev/null || true
+      svc_enable "$dep"
     else
       echo "    AVISO: falta servicio $dep — ejecuta install-optional-services.sh y repite." >&2
     fi
@@ -166,13 +214,14 @@ fi
 if [[ -f "$SVC_LLAMA_SRC" ]]; then
   echo "==> Definición runit llama-smol (opt-in)..."
   mkdir -p "$SVC_LLAMA_DST"
-  cp -f "$SVC_LLAMA_SRC" "$SVC_LLAMA_DST/run"
+  tr -d '\r' <"$SVC_LLAMA_SRC" >"$SVC_LLAMA_DST/run"
   chmod +x "$SVC_LLAMA_DST/run"
   if [[ "$ENABLE_LLAMA" == "1" ]]; then
-    echo "    AVISO: modo single: SmolLM3 al boot consume ~3 GiB RAM (router: solo al usarlo)."
-    sv-enable llama-smol 2>/dev/null || { rm -f "$SVC_LLAMA_DST/down"; sv up llama-smol; }
+    echo "    AVISO: modo single: SmolLM3 al boot consume ~3 GiB RAM (router: solo al usarlo;"
+    echo "           el paquete Termux no soporta router → cae a single, ver llm router-check)."
+    svc_enable llama-smol
   else
-    sv-disable llama-smol 2>/dev/null || touch "$SVC_LLAMA_DST/down"
+    svc_disable llama-smol
     echo "    llama-smol deshabilitado (sv-enable llama-smol para activar)."
   fi
 fi
@@ -180,7 +229,9 @@ fi
 echo ""
 echo "==> Comprobación local (sin reiniciar el teléfono)..."
 if command -v sv >/dev/null 2>&1; then
-  sv status sshd 2>/dev/null || true
+  for s in sshd llama-smol charge-limiter thermal-guard; do
+    if [[ -d "${SVDIR}/${s}" ]]; then svc_status "$s"; fi
+  done
 fi
 pgrep -x sshd >/dev/null && echo "sshd: proceso activo" || echo "sshd: no visible (normal hasta boot o start-services)"
 

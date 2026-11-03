@@ -22,10 +22,15 @@ source "$COMMON"
 termux-wake-lock 2>/dev/null || true
 
 if [[ "$LLM_SERVER_MODE" == "router" ]]; then
-  llm_run_router
-  echo "llama-smol: router no arrancó; reintento en 30 s (LLM_SERVER_MODE=single para volver al modo anterior)" >&2
-  sleep 30
-  exit 1
+  rc=0
+  llm_run_router || rc=$?
+  if [[ "$rc" == "3" ]]; then
+    echo "llama-smol: router no soportado por este build → single (SmolLM3)" >&2
+  else
+    echo "llama-smol: router no arrancó; reintento en 30 s (LLM_SERVER_MODE=single para volver al modo anterior)" >&2
+    sleep 30
+    exit 1
+  fi
 fi
 
 MODEL="$LLM_MODELS/HuggingFaceTB_SmolLM3-3B-Q4_K_M.gguf"

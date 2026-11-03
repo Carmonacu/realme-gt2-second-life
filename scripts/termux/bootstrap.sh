@@ -50,7 +50,8 @@ else
     cmake -S "$BUILD_DIR" -B "$BUILD_DIR/build" -DCMAKE_BUILD_TYPE=Release \
       -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod \
       -DLLAMA_CURL=ON \
-      -DLLAMA_BUILD_SERVER=ON
+      -DLLAMA_BUILD_SERVER=ON \
+      -DLLAMA_SUBPROCESS=ON   # router de llama-server (OFF por defecto en Android)
     cmake --build "$BUILD_DIR/build" -j"$(nproc)"
     mkdir -p "${HOME}/opt/llama-b12017"
     cp -a "$BUILD_DIR/build/bin/"* "${HOME}/opt/llama-b12017/" 2>/dev/null || \

@@ -6,4 +6,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=llm-common.sh
 source "$SCRIPT_DIR/llm-common.sh"
 
-llm_run_router "$@"
+rc=0
+llm_run_router "$@" || rc=$?
+# rc 3 = build sin subprocess (mensaje ya mostrado) → single SmolLM3 salvo que se pida lo contrario
+if [[ "$rc" == "3" && "${LLM_ROUTER_NO_FALLBACK:-0}" != "1" ]]; then
+  echo "==> Fallback: modo single (run-smol.sh ${LLM_ROUTER_CTX:-4096})" >&2
+  exec "$SCRIPT_DIR/run-smol.sh" "${LLM_ROUTER_CTX:-4096}"
+fi
+exit "$rc"

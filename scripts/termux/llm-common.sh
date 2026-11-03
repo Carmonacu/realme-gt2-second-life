@@ -37,7 +37,13 @@ LLM_REASONING="${LLM_REASONING:-off}"
 #   router  = un endpoint, varios modelos (--models-preset), carga bajo demanda (por defecto)
 #   single  = comportamiento anterior (SmolLM3 fijo, run-smol.sh)
 # «llm <modelo>» interactivo sigue siendo siempre single.
+# OJO: el router necesita llama.cpp compilado con -DLLAMA_SUBPROCESS=ON. El paquete de Termux
+# (pkg llama-cpp, b12017) se compila para Android con LLAMA_SUBPROCESS=OFF (defecto en Android)
+# y el router falla con «subprocess is not enabled on this build». llm_router_check lo detecta
+# antes de arrancar y todo (mode llm, servicio llama-smol, llm router) cae a single al momento.
 LLM_SERVER_MODE="${LLM_SERVER_MODE:-router}"
+LLM_PROBE_PORT="${LLM_PROBE_PORT:-18090}"          # puerto libre para la sonda del router (8090 = qBittorrent)
+LLM_ROUTER_PROBE_TIMEOUT="${LLM_ROUTER_PROBE_TIMEOUT:-15}" # s máx. de la sonda
 LLM_MODELS_MAX="${LLM_MODELS_MAX:-1}"             # router: modelos cargados a la vez
 LLM_SLEEP_IDLE="${LLM_SLEEP_IDLE:-600}"           # router: s sin peticiones → descarga modelo (-1 = nunca)
 LLM_SINGLE_SLEEP_IDLE="${LLM_SINGLE_SLEEP_IDLE:--1}" # single: igual, desactivado por defecto
@@ -392,8 +398,78 @@ llm_write_router_preset() {
   } >"$out"
 }
 
+LLM_ROUTER_UNSUPPORTED_RE='subprocess is not enabled on this build'
+
+llm_router_unsupported_msg() {
+  cat >&2 <<'EOF'
+AVISO: el modo router NO está disponible con este llama-server:
+  «subprocess is not enabled on this build» (el paquete de Termux se compila sin soporte
+  de subprocesos). Se usa el modo single (SmolLM3) en su lugar.
+  Para usar el router hay que compilar llama.cpp desde el código fuente en Termux con
+  -DLLAMA_SUBPROCESS=ON, o usar un proxy tipo llama-swap. Ver docs/termux-llm-guide.md.
+  Para no intentarlo más: echo 'LLM_SERVER_MODE=single' >> ~/.llm.conf
+EOF
+}
+
+# llm_router_check: ¿soporta este llama-server el modo router?
+#   0 = sí · 1 = no (build sin subprocess; resultado cacheado por binario) · 2 = indeterminado
+# Arranca una sonda breve en 127.0.0.1:$LLM_PROBE_PORT (el router no carga modelos al iniciar)
+# y la mata en cuanto hay /health OK o aparece el error en el log.
+llm_router_check() {
+  llm_resolve_server || return 2
+  mkdir -p "$LLM_CACHE_DIR" 2>/dev/null || true
+  local cache="$LLM_CACHE_DIR/router-capability" sig cached_sig="" cached_res=""
+  sig="$LLAMA_SERVER:$(stat -c '%s:%Y' "$LLAMA_SERVER" 2>/dev/null || echo 0)"
+  if [[ -f "$cache" ]]; then
+    cached_sig="$(sed -n 's/^sig=//p' "$cache" 2>/dev/null | head -1)"
+    cached_res="$(sed -n 's/^result=//p' "$cache" 2>/dev/null | head -1)"
+    if [[ "$cached_sig" == "$sig" ]]; then
+      case "$cached_res" in
+        yes) return 0 ;;
+        no) return 1 ;;
+      esac
+    fi
+  fi
+
+  local preset="$LLM_CACHE_DIR/router-probe.ini" log="$LLM_CACHE_DIR/router-probe.log"
+  printf 'version = 1\n\n[*]\nn-gpu-layers = 0\n' >"$preset"
+  : >"$log"
+  "$LLAMA_SERVER" --models-preset "$preset" --models-max 1 \
+    --host 127.0.0.1 --port "$LLM_PROBE_PORT" >"$log" 2>&1 &
+  local pid=$! i res=2
+  for i in $(seq 1 "$((LLM_ROUTER_PROBE_TIMEOUT * 2))"); do
+    if grep -q "$LLM_ROUTER_UNSUPPORTED_RE" "$log" 2>/dev/null; then
+      res=1; break
+    fi
+    if curl -sf -m 1 "http://127.0.0.1:${LLM_PROBE_PORT}/health" >/dev/null 2>&1; then
+      res=0; break
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      grep -q "$LLM_ROUTER_UNSUPPORTED_RE" "$log" 2>/dev/null && res=1
+      break
+    fi
+    sleep 0.5
+  done
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  case "$res" in
+    0) printf 'sig=%s\nresult=yes\n' "$sig" >"$cache" ;;
+    1) printf 'sig=%s\nresult=no\n' "$sig" >"$cache" ;;
+  esac
+  return "$res"
+}
+
 llm_run_router() {
   llm_resolve_server || return 1
+  # Capacidad: con el paquete de Termux el router muere al instante → no esperar al timeout
+  if [[ "${LLM_ROUTER_SKIP_CHECK:-0}" != "1" ]]; then
+    local rc=0
+    llm_router_check || rc=$?
+    if [[ "$rc" == "1" ]]; then
+      llm_router_unsupported_msg
+      return 3
+    fi
+  fi
   llm_apply_remote_mode || return 1
   llm_acquire_wakelock
 

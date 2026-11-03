@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # Qwen2.5-3B + borrador Qwen2.5-0.5B (decodificación especulativa, draft-simple).
-# +~0,5 GiB RAM sobre qwen3b. Ganancia en CPU NO medida aún: scripts/bench/run-llm-variants.sh
+# +~0,5 GiB RAM sobre qwen3b. 2026-11-03: sin ganancia medida (teléfono limitado; repetir): scripts/bench/run-llm-variants.sh
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=llm-common.sh

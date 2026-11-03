@@ -4,12 +4,16 @@
 # Servidor de «mode llm» y del servicio llama-smol:
 #   router = un endpoint :8080, todos los modelos como presets, carga bajo demanda (defecto)
 #   single = comportamiento anterior (SmolLM3 fijo con run-smol.sh)
+# El router exige llama.cpp con -DLLAMA_SUBPROCESS=ON: el paquete de Termux (b12017) NO lo trae
+# («subprocess is not enabled on this build») → se cae a single automáticamente (llm router-check).
+# Con el paquete de Termux, single evita la sonda en cada arranque.
 LLM_SERVER_MODE=router
 LLM_MODELS_MAX=1            # router: modelos cargados a la vez (8 GB → 1)
 LLM_SLEEP_IDLE=600          # router: s sin peticiones → descarga el modelo de RAM (-1 = nunca)
 LLM_SINGLE_SLEEP_IDLE=-1    # igual para «llm <modelo>» (single); -1 = comportamiento anterior
 LLM_ROUTER_DEFAULT_MODEL=smol
 LLM_ROUTER_MODELS_DIR=0     # 1 = además lista todos los GGUF de ~/models con su nombre de fichero
+#LLM_PROBE_PORT=18090       # puerto libre para la sonda del router (no 8090: qBittorrent)
 
 # KV cache: f16 (defecto) | q8_0 (≈ mitad de RAM de contexto; activa --flash-attn on)
 LLM_KV_TYPE=f16
