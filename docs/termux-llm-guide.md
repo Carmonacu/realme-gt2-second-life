@@ -18,7 +18,7 @@
 | Binarios llama.cpp **b12017** (copia) | `/data/local/tmp/llama/` → `/sdcard/Download/llm-setup/llama-b12017/` | **Sí** — originales intactos en tmp |
 | Scripts de chat | `scripts/termux/` → `/sdcard/Download/llm-setup/` | **Sí** |
 
-**Termux:API** no es necesario; `termux-wake-lock` viene de **termux-tools** (base).
+**Termux:API** no es necesario para el LLM; `termux-wake-lock` viene de **termux-tools** (base). Solo lo usan los opcionales `charge-limiter` / `thermal-guard` ([always-on-battery.md §9](always-on-battery.md#9-limitador-de-carga-y-guardián-térmico-opt-in)).
 
 ### Deshacer tweaks adb (reversible)
 
@@ -57,11 +57,12 @@ Interfaz única para no mezclar LLM, Kali y media en 8 GB RAM. Scripts en [`scri
 ```bash
 # Tras install-boot-services.sh (copia mode → ~/bin)
 mode status
-mode llm                 # SmolLM3 (equivalente a llm smol en segundo plano)
+mode llm                 # router llama-server (todos los modelos, bajo demanda; ver § Router)
 mode idle                # para todo lo pesado
 mode pentest --shell     # para LLM + shell Kali (sin kali --force)
 mode media               # Jellyfin (install-optional-services.sh)
 mode light-stack         # Mosquitto + Node-RED
+mode gaming              # Minecraft Java (Paper): mc-server install primero — docs/minecraft-java.md
 ```
 
 Desde el PC (SSH):
@@ -75,6 +76,102 @@ ssh … u0_aNNN@127.0.0.1 mode llm
 **Tras reboot:** el boot aplica **`idle`** por defecto; ejecuta **`mode llm`** cuando quieras chat. Variable opcional: `TERMUX_DEFAULT_MODE=llm` (consume RAM al arrancar).
 
 Diseño completo: [`service-modes-design.md`](service-modes-design.md).
+
+## Router, KV q8_0, especulativa y métricas (b12017)
+
+Flags verificados contra `tools/server/README.md` y el código del tag **b12017**. **Router probado en el teléfono 2026-11-03** con llama.cpp b12017 **compilado en Termux** con `-DLLAMA_SUBPROCESS=ON` (ver abajo); el binario empaquetado no lo soporta. Config opcional en **`~/.llm.conf`** (plantilla [`llm.conf.example`](../scripts/termux/llm.conf.example)); las variables de entorno mandan sobre el fichero.
+
+| Opción | Cómo | Qué hace |
+|--------|------|----------|
+| **Router** (defecto en `mode llm` y servicio `llama-smol`) | `llm router` · `LLM_SERVER_MODE=router` | `llama-server` sin `-m` + `--models-preset ~/.cache/llm/router-presets.ini` (generado con los GGUF presentes) + `--models-max 1` + `--sleep-idle-seconds 600`. Un endpoint :8080; el modelo se carga con la 1.ª petición y se descarga tras 10 min sin uso. |
+| Volver al modo anterior | `LLM_SERVER_MODE=single` en `~/.llm.conf` | `mode llm` / `llama-smol` = SmolLM3 fijo (`run-smol.sh`). Antes de arrancar el router se hace una sonda de capacidad (`llm router-check`, cacheada por binario en `~/.cache/llm/router-capability`, puerto de sonda `LLM_PROBE_PORT=18099`; si está ocupado prueba los 9 siguientes, para no dar un falso «sí» con otro servidor escuchando); si el build no soporta router, `mode llm`, `llm router` y el servicio `llama-smol` caen **al momento** a single con aviso. Si el router arranca pero no da `/health` en 30 s, `mode llm` también cae a single (y corta antes si el log muestra el error de subprocess). |
+| **KV cache q8_0** (**defecto** desde 2026-11-03) | `LLM_KV_TYPE=q8_0` (defecto; `LLM_KV_TYPE=f16` para volver) | `-ctk q8_0 -ctv q8_0 -fa on` (la V cuantizada **exige** flash-attn en b12017; con `-fa off` falla al crear contexto). ≈ mitad de RAM de KV → más contexto (p. ej. `llm qwen3b 8192`). Coste medido: qwen3b 8,06 vs 8,27 tok/s (−2,5 %). |
+| **Especulativa** | `llm qwen3b-spec` · preset router `qwen3b-spec` | Qwen2.5-3B + borrador Qwen2.5-0.5B: `--model-draft … --spec-type draft-simple --spec-draft-n-max 8 --spec-draft-p-min 0.75`. En b12017 **`--draft-max`/`--draft-min` ya no existen**. +~0,5 GiB RAM. Medida 2026-11-03 con pantalla encendida: **sin ganancia** (7,95 vs 8,06 tok/s con KV q8_0) → **no es el defecto**; el preset se mantiene solo para pruebas ([detalle](benchmarks/rmx3311-llm.md#variantes-router--kv-q8_0--especulativa-b12017)). |
+| **Métricas** | `LLM_METRICS=1` (defecto) | `--metrics` → `GET /metrics` (Prometheus). En router: `/metrics?model=smol`. El portal muestra tok/s medio, modelo cargado y aceptación del borrador. |
+
+```bash
+mode llm                         # router en segundo plano (log: ~/llm-mode.log)
+llm models                       # smol / qwen3b / qwen05 / ds15 / phi / qwen3b-spec + estado
+llm unload                       # descarga ya el modelo cargado (libera RAM sin parar el router)
+curl -s http://127.0.0.1:8080/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model":"smol","messages":[{"role":"user","content":"hola"}]}'
+curl -s 'http://127.0.0.1:8080/metrics?model=smol' | grep tokens_seconds
+```
+
+### Router NO disponible con el binario empaquetado (prueba 2026-11-03)
+
+En el teléfono, el `llama-server` b12017 empaquetado (paquete/binario Android) **falla el modo router al instante**:
+
+```
+failed to initialize router models: subprocess is not enabled on this build
+```
+
+Causa (verificado en el código de llama.cpp, `CMakeLists.txt` del tag b12017 y de `master`): el router lanza un subproceso `llama-server` por modelo y eso depende de la opción CMake **`LLAMA_SUBPROCESS`** (*"llama-common: use subprocess, required by server tools and server router mode"*), que vale **`OFF` por defecto cuando se compila para Android** (también iOS/WASM). El [build.sh de Termux](https://github.com/termux/termux-packages/blob/master/packages/llama-cpp/build.sh) no la activa, así que `pkg install llama-cpp` tampoco trae router. Los scripts lo detectan y usan single (SmolLM3).
+
+### Router con llama.cpp compilado en Termux (probado 2026-11-03)
+
+**Funciona.** Compilación en el propio teléfono (SD888, `-j6`, pantalla encendida): **~5 min** solo para `llama-server`, `llama-bench` y `llama-cli`.
+
+```bash
+pkg install -y git cmake ninja clang make libandroid-spawn
+git clone --depth 1 --branch b12017 https://github.com/ggml-org/llama.cpp ~/src/llama.cpp
+cmake -S ~/src/llama.cpp -B ~/src/llama.cpp/build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DLLAMA_CURL=ON -DLLAMA_BUILD_SERVER=ON -DLLAMA_SUBPROCESS=ON -DGGML_OPENMP=OFF \
+  -DCMAKE_C_FLAGS=-DSUBPROCESS_HAVE_CWD=0 -DCMAKE_CXX_FLAGS=-DSUBPROCESS_HAVE_CWD=0 \
+  -DCMAKE_EXE_LINKER_FLAGS=-landroid-spawn -DCMAKE_SHARED_LINKER_FLAGS=-landroid-spawn
+cmake --build ~/src/llama.cpp/build -j6 --target llama-server llama-bench llama-cli
+mkdir -p ~/opt/llama-b12017
+cp -a ~/src/llama.cpp/build/bin/{llama-server,llama-bench,llama-cli} ~/src/llama.cpp/build/bin/*.so* ~/opt/llama-b12017/
+rm -f ~/.cache/llm/router-capability && llm router-check   # → «router: soportado»
+```
+
+(`bootstrap.sh` usa estos mismos flags cuando compila desde fuente.)
+
+- **`-DSUBPROCESS_HAVE_CWD=0` es imprescindible:** sin él la compilación falla en `vendor/sheredom/subprocess.h` con *`posix_spawn_file_actions_addchdir_np` undeclared* (bionic solo lo declara desde API 34; Termux compila contra API 24). `llama-server` no usa el directorio de trabajo del subproceso, así que desactivarlo no cambia nada. `-landroid-spawn` aporta `posix_spawn*` (igual que el paquete de Termux).
+- **Dónde:** `~/opt/llama-b12017/` (binarios + `libllama.so`/`libggml*.so`). Los scripts prefieren `LLM_BIN_DIR=~/opt/llama-b12017` y exportan `LD_LIBRARY_PATH` (el RUNPATH del build pone `$PREFIX/lib` primero, donde están las libs del paquete); los hijos del router lo heredan. El paquete `llama-cpp` se queda instalado como respaldo.
+- **Verificado:** `/health` en ~2–3 s sin modelo; `/v1/models` lista `ds15 phi qwen05 qwen3b qwen3b-spec smol`; `/health` responde (~0,06 s) mientras carga un modelo; primer `smol` ~5 s de carga; cambiar a `qwen3b` descarga `smol` (`--models-max 1`); `llm unload` (0,2 s) libera la RAM (MemAvailable vuelve a ~3,9 GB); `--sleep-idle-seconds 600` aceptado y propagado a los hijos; `/metrics?model=qwen3b` da `predicted_tokens_seconds` (sin `?model=` el router devuelve **400**). tok/s en [benchmarks](benchmarks/rmx3311-llm.md#router-b12017-compilado-en-termux-2026-11-03).
+- **RAM:** con Jellyfin parado sobra (qwen3b cargado deja ~1,9 GB libres). Con poca RAM libre (~1,7 GB y swap lleno) la carga de qwen3b llegó a tardar ~9 min: usa `mode llm` (para Jellyfin/media) antes de pedir modelos grandes.
+
+Alternativas: proxy tipo [llama-swap](https://github.com/mostlygeek/llama-swap) (no integrado) o quedarse en **single** (`echo 'LLM_SERVER_MODE=single' >> ~/.llm.conf`).
+
+**Ojo con el router:** la API **exige** el campo `"model"` (la UI web tiene selector). Con `--models-max 1`, pedir otro modelo descarga el anterior (recarga ~10–15 s). En presets fijamos `ctx-size` (sin él, `--fit` elegiría el contexto máximo y en CPU la RAM se considera ilimitada). `thermal-guard` puede forzar menos hilos con `~/.cache/llm/threads-override`.
+
+**Pantalla encendida para usar el LLM** — ver [Pantalla y rendimiento](#pantalla-y-rendimiento): `mode llm` la enciende sola con `gt2-screen`.
+
+**Benchmark en el teléfono** (baseline vs KV q8_0 vs especulativa): [`scripts/bench/run-llm-variants.sh`](../scripts/bench/run-llm-variants.sh) — ver [benchmarks/rmx3311-llm.md](benchmarks/rmx3311-llm.md#variantes-router--kv-q8_0--especulativa-b12017).
+
+## Pantalla y rendimiento
+
+**Con la pantalla apagada el LLM no es usable.** ColorOS limita los núcleos medios (`cpu4`, `scaling_max_freq`) a **1,44 GHz** en cuanto la pantalla se apaga o entra en *Dozing* (AOD): Qwen2.5-3B baja a **~2,8 tok/s** y una respuesta de 120 tokens con qwen3b **no terminó en 4 min**. Con la pantalla encendida: **~8–12 tok/s** (qwen3b ~11,8 en router; 8,1 / 7,4 medido 2026-11-03 17:51 CET justo tras despertarla con `gt2-screen on`, `cpu4` a 2,11 GHz, en pantalla de bloqueo). **No sirve** `cmd power set-fixed-performance-mode-enabled true` (probado vía ADB: sigue el límite de 1,44 GHz).
+
+Lo que sí funciona:
+
+1. **«Permanecer activo» mientras carga** (Opciones de desarrollador; `settings get global stay_on_while_plugged_in` = **15**, AC/USB/inalámbrica/dock): enchufado, la pantalla no se apaga sola. Pon el **brillo al mínimo**. Si se apaga (botón de encendido, desenchufado), hay que despertarla:
+2. **`gt2-screen`** (self-ADB: el `adb` de Termux conectado al propio teléfono por *Depuración inalámbrica*):
+
+   ```bash
+   gt2-screen status     # pantalla: Awake|Dozing|Asleep · permanecer activo: 15 · ADB: 127.0.0.1:<puerto>
+   gt2-screen on         # KEYCODE_WAKEUP (queda en la pantalla de bloqueo: basta para quitar el límite)
+   gt2-screen off        # KEYCODE_SLEEP
+   gt2-screen keep-on    # stay_on_while_plugged_in=15 + on
+   gt2-screen connect    # solo (re)conectar ADB y cachear el puerto
+   ```
+
+   `mode llm` ejecuta `gt2-screen on` antes de arrancar el servidor (`SCREEN_CONTROL=1`, defecto); si falla solo avisa, el cambio de modo sigue. `SCREEN_OFF_ON_EXIT=1` hace que `mode media|idle|light-stack` la apaguen (defecto 0: con «Permanecer activo» volvería a quedarse encendida). `mode status` muestra la línea `pantalla:` (solo con el puerto cacheado, sin escanear).
+
+**Configurar self-ADB (una vez):**
+
+```bash
+pkg install android-tools             # adb 1.0.41 (sin mDNS); bootstrap.sh ya lo instala
+# Ajustes > Opciones de desarrollador > Depuración inalámbrica (ON, con Wi-Fi) >
+#   «Vincular dispositivo con código de vinculación» → puerto de vinculación + código de 6 cifras
+adb pair 127.0.0.1:<puerto-vinculación> <código>
+gt2-screen connect                    # busca el puerto de conexión y lo cachea en ~/.cache/gt2/adb-port
+```
+
+- **El emparejamiento persiste**; lo que cambia tras reiniciar o al desactivar/activar la depuración inalámbrica es el **puerto de conexión** (el que aparece como «Dirección IP y puerto»). Como el adb de Termux no tiene mDNS, `gt2-screen` prueba el puerto cacheado y, si falla, **escanea 127.0.0.1:30000–50000** (`nmap` si está instalado; si no, `/dev/tcp` de bash en paralelo, ~14 s en el SD888) y hace `adb connect` a cada puerto abierto hasta que uno queda en `device`. `/proc/net/tcp` no es legible en Android (permiso denegado), por eso el escaneo.
+- **Android apaga la Depuración inalámbrica** al reiniciar o cambiar de Wi-Fi: si `gt2-screen` dice «no hay conexión ADB», reactívala en Ajustes (no hace falta volver a vincular).
+- **`adb tcpip 5555` (puerto fijo): no se usa.** Reinicia `adbd` en modo TCP clásico, que corta la sesión de depuración inalámbrica y no está claro que acepte la clave emparejada sin un diálogo en pantalla; si falla, el teléfono queda sin ADB hasta tocarlo a mano. No se probó en el RMX3311 por eso.
 
 ### Portal homepage (puerto 8081)
 
@@ -247,7 +344,9 @@ Tras bootstrap + **reiniciar Termux**, con `allow-external-apps=true` en `~/.ter
 |------|-----|
 | [`scripts/termux/bootstrap.sh`](../scripts/termux/bootstrap.sh) | Instalación única |
 | [`scripts/termux/llm`](../scripts/termux/llm) | Menú principal |
-| [`scripts/termux/run-*.sh`](../scripts/termux/) | Un script por modelo |
+| [`scripts/termux/run-*.sh`](../scripts/termux/) | Un script por modelo (`run-router.sh`, `run-qwen3b-spec.sh` nuevos) |
+| [`scripts/termux/llm.conf.example`](../scripts/termux/llm.conf.example) | Plantilla `~/.llm.conf` (router, KV, especulativa, métricas) |
+| [`scripts/bench/run-llm-variants.sh`](../scripts/bench/run-llm-variants.sh) | Benchmark baseline / KV q8_0 / especulativa (Termux) |
 | [`scripts/termux/adb-start-llm.ps1`](../scripts/termux/adb-start-llm.ps1) | Intento adb RUN_COMMAND |
 | [`scripts/termux/ssh-setup.sh`](../scripts/termux/ssh-setup.sh) | OpenSSH en Termux (una vez) |
 | [`scripts/termux/install-boot-services.sh`](../scripts/termux/install-boot-services.sh) | Termux:Boot + runit (`sshd` al reboot) — [termux-boot-services.md](../docs/termux-boot-services.md) |

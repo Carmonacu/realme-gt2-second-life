@@ -1,6 +1,6 @@
 # Project status (execution)
 
-Last verified: **2026-10-31** (Termux LLM + SSH on **YOUR_ADB_SERIAL**; **Termux:Boot + reboot test OK** — `sshd` sin abrir Termux; Tailscale no auto-arrancó tras reboot — ver abajo).
+Last verified: **2026-11-03** (router/KV/especulativa en teléfono; ver fila LLM router) · antes **2026-10-31** (Termux LLM + SSH on **YOUR_ADB_SERIAL**; **Termux:Boot + reboot test OK** — `sshd` sin abrir Termux; Tailscale no auto-arrancó tras reboot — ver abajo).
 
 ## Plan B on device (audit 2026-10-31)
 
@@ -13,6 +13,9 @@ SSH read-only audit via ADB + forward **8022**. Repo docs vs **this phone**:
 | **Always-on / § E rol principal** | [always-on-battery.md](always-on-battery.md), [phone-tuning.md § E](phone-tuning.md#e-mantener-el-rol-principal-política-operativa) | **`~/bin/mode` v1** — boot `idle`; log `~/storage/shared/mode-transitions.log` |
 | Jellyfin / Node-RED / Mosquitto / udocker | [service-modes-design.md](service-modes-design.md) · [jellyfin-media.md](jellyfin-media.md) | **Instalados**; runit **`services/jellyfin/run`** (`DOTNET_ROOT=$PREFIX/lib/dotnet`); **HTTP 302/200** en :8096; **`mode media`** activo; **media de prueba** en `~/storage/shared/Movies`: `BigBuckBunny_320x180.mp4` (~62 MiB), `sintel_trailer-1080p.mp4` (~14 MiB); **asistente Jellyfin pendiente** |
 | **Control `mode`** | [termux-llm-guide.md](termux-llm-guide.md) | Operativo en teléfono |
+| **LLM router + KV q8_0 + especulativa + métricas** (b12017) | [termux-llm-guide.md § Router](termux-llm-guide.md#router-kv-q8_0-especulativa-y-métricas-b12017) · bench `scripts/bench/run-llm-variants.sh` · [rmx3311-llm.md](benchmarks/rmx3311-llm.md#variantes-router--kv-q8_0--especulativa-b12017) | **Probado en teléfono 2026-11-03:** **router OK** con llama.cpp b12017 **compilado en Termux** (`-DLLAMA_SUBPROCESS=ON -DSUBPROCESS_HAVE_CWD=0 -landroid-spawn`, ~5 min) en `~/opt/llama-b12017` — `mode llm` arranca el router en :8080, cambio de modelo, `llm unload`, `/metrics?model=` y `--sleep-idle-seconds` verificados (qwen3b ~11,2–11,6 tok/s, smol ~9,3). El binario empaquetado sigue sin router (fallback a single). Bench pantalla encendida: qwen3b 8,27 (f16) / 8,06 (q8_0) / 7,95 (spec) tok/s → **KV q8_0 por defecto**, especulativa no. Pantalla apagada = throttling (cpu4 1,44 GHz, ~2,8 tok/s) |
+| **Minecraft Java (Paper) — `mode gaming`** | [minecraft-java.md](minecraft-java.md) · `scripts/termux/mc-server` | **Probado en teléfono 2026-11-03:** Paper 26.3 build 238 + OpenJDK 25; Done en 11,7–15,7 s, **20 TPS** vacío, RSS ~1,5 GB (heap 2560M); `mode gaming` ↔ `mode media` con parada limpia; puerto 25565 accesible por Tailscale (`100.127.134.111:25565`). Pendiente: prueba con jugadores reales |
+| **charge-limiter + thermal-guard** (opt-in) | [always-on-battery.md § 9](always-on-battery.md#9-limitador-de-carga-y-guardián-térmico-opt-in) | **Solo repo** — falta Termux:API en el teléfono, importar flujo Node-RED y elegir enchufe |
 
 **Next on device (order):** **Tailscale (app Android):** tras reboot abrir la app o activar VPN always-on (no usar solo `tailscaled` de Termux). **Jellyfin:** completar asistente en `http://<tailscale-ip>:8096/web/` y añadir biblioteca `…/storage/shared/Movies` ([jellyfin-media.md](jellyfin-media.md)). Reinstalar runit Jellyfin: `bash install-optional-services.sh` o copiar `services/jellyfin/run`.
 

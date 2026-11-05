@@ -1,0 +1,474 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# mc-server — servidor Minecraft Java (Paper) en Termux, supervisado por runit (servicio «minecraft»).
+#
+# Uso: mc-server <comando>
+#   install [--geyser] [--version X]  Java (pkg) + Paper estable más reciente (API fill.papermc.io v3,
+#                                     sha256 verificado) + eula/server.properties + servicio runit
+#   update [--version X]              baja el último build estable (reinicia si estaba en marcha)
+#   start | stop | restart            arranca (espera «Done») / para limpio («stop» por la consola)
+#   status [--json]                   servicio, PID, RAM, versión y jugadores (server list ping)
+#   console                           consola interactiva (Ctrl+D sale SIN parar el servidor)
+#   logs [-f] [N]                     últimas N líneas de logs/latest.log (-f = seguir)
+#   cmd "<comando>"                   manda un comando y muestra la salida (p. ej. cmd "tps")
+#   op <jugador>                      atajo de cmd "op <jugador>"
+#   backup                            save-off/save-all → tar.gz en ~/minecraft/backups → save-on
+#   geyser install|remove             Geyser + Floodgate (jugadores Bedrock, UDP 19132)
+#   ping [host] [puerto]              server list ping (versión, jugadores, MOTD)
+#
+# Config: ~/.config/gt2-minecraft/minecraft.conf (plantilla minecraft.conf.example); el entorno manda.
+# EULA de Mojang: https://www.minecraft.net/eula — `install` escribe eula=true (lo pidió el usuario).
+set -uo pipefail
+export PATH="${HOME}/bin:${PREFIX}/bin:${PATH}"
+
+MC_CONF_DIR="${MC_CONF_DIR:-${HOME}/.config/gt2-minecraft}"
+MC_CONF="${MC_CONF:-${MC_CONF_DIR}/minecraft.conf}"
+MC_STATE="${MC_CONF_DIR}/state.env"
+
+# Config: KEY=valor del fichero solo si la variable no viene ya del entorno
+if [[ -f "$MC_CONF" ]]; then
+  while IFS='=' read -r k v; do
+    [[ "$k" =~ ^[A-Z_][A-Z0-9_]*$ ]] || continue
+    v="${v%%#*}"; v="${v%"${v##*[![:space:]]}"}"; v="${v#[\"\']}"; v="${v%[\"\']}"
+    [[ "$v" == "~/"* ]] && v="${HOME}/${v#\~/}"
+    [[ -z "${!k+x}" ]] && printf -v "$k" '%s' "$v"
+  done < <(tr -d '\r' <"$MC_CONF")
+fi
+MC_DIR="${MC_DIR:-${HOME}/minecraft/paper}"
+MC_BACKUP_DIR="${MC_BACKUP_DIR:-${HOME}/minecraft/backups}"
+MC_BACKUP_KEEP="${MC_BACKUP_KEEP:-5}"
+MC_XMS="${MC_XMS:-2560M}"
+MC_XMX="${MC_XMX:-2560M}"
+MC_PORT="${MC_PORT:-25565}"
+MC_VERSION="${MC_VERSION:-auto}"         # auto = última versión SUPPORTED con build STABLE
+MC_PRETOUCH="${MC_PRETOUCH:-0}"          # 1 = -XX:+AlwaysPreTouch (reserva todo el heap al arrancar)
+MC_JAVA_OPTS_EXTRA="${MC_JAVA_OPTS_EXTRA:-}"
+MC_STOP_TIMEOUT="${MC_STOP_TIMEOUT:-120}"
+MC_START_TIMEOUT="${MC_START_TIMEOUT:-600}"
+MC_MOTD="${MC_MOTD:-RMX3311 · Paper en Termux}"
+MC_SVC="minecraft"
+MC_FIFO="${MC_DIR}/console.fifo"
+MC_LOG="${MC_DIR}/logs/latest.log"
+MC_MARK="-Dgt2.minecraft=1"
+UA="realme-gt2-second-life/1.0 (https://github.com/; mc-server)"
+FILL="https://fill.papermc.io/v3/projects/paper"
+SVDIR="${SVDIR:-${PREFIX}/var/service}"
+export SVDIR
+
+# Flags de la API de Paper (java.flags.recommended = Aikar) — respaldo si no hay state.env
+AIKAR_FLAGS="-XX:+DisableExplicitGC -XX:+ParallelRefProcEnabled -XX:+PerfDisableSharedMem -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1HeapRegionSize=8M -XX:G1HeapWastePercent=5 -XX:G1MaxNewSizePercent=40 -XX:G1MixedGCCountTarget=4 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1NewSizePercent=30 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:G1ReservePercent=20 -XX:InitiatingHeapOccupancyPercent=15 -XX:MaxGCPauseMillis=200 -XX:MaxTenuringThreshold=1 -XX:SurvivorRatio=32"
+
+die() { echo "mc-server: $*" >&2; exit 1; }
+info() { echo "==> $*"; }
+state_get() { [[ -f "$MC_STATE" ]] && sed -n "s/^$1=//p" "$MC_STATE" | tail -1; return 0; }
+state_set() {
+  mkdir -p "$MC_CONF_DIR"; touch "$MC_STATE"
+  grep -v "^$1=" "$MC_STATE" >"${MC_STATE}.tmp" 2>/dev/null || true
+  printf '%s=%s\n' "$1" "$2" >>"${MC_STATE}.tmp"; mv -f "${MC_STATE}.tmp" "$MC_STATE"
+}
+
+mc_pid() { pgrep -f "[D]gt2.minecraft=1" | head -1; }
+mc_running() { [[ -n "$(mc_pid)" ]]; }
+
+api() { curl -fsSL -m 30 -A "$UA" "$1"; }
+
+# Resuelve versión + build STABLE + java mínimo + flags → variables R_*
+resolve_paper() {
+  local want="${1:-$MC_VERSION}" out
+  command -v jq >/dev/null 2>&1 || die "falta jq (pkg install jq)"
+  if [[ "$want" == "auto" || -z "$want" ]]; then
+    # versiones en orden (más nueva primero), sin -rc/-pre; la primera SUPPORTED con build STABLE
+    local v
+    for v in $(api "$FILL" | jq -r '.versions | to_entries[] | .value[]' | grep -vE -- '-(rc|pre)'); do
+      [[ "$(api "$FILL/versions/$v" | jq -r '.version.support.status')" == "SUPPORTED" ]] || continue
+      if api "$FILL/versions/$v/builds?channel=STABLE" | jq -e 'length > 0' >/dev/null 2>&1; then
+        want="$v"; break
+      fi
+    done
+    [[ "$want" != "auto" ]] || die "no encontré ninguna versión SUPPORTED con build STABLE en $FILL"
+  fi
+  out="$(api "$FILL/versions/$want/builds?channel=STABLE")" || die "versión $want no existe en la API de Paper"
+  R_VERSION="$want"
+  R_BUILD="$(jq -r 'max_by(.id).id' <<<"$out")"
+  [[ "$R_BUILD" =~ ^[0-9]+$ ]] || die "sin builds STABLE para $want"
+  R_URL="$(jq -r "map(select(.id==$R_BUILD))[0].downloads[\"server:default\"].url" <<<"$out")"
+  R_SHA="$(jq -r "map(select(.id==$R_BUILD))[0].downloads[\"server:default\"].checksums.sha256" <<<"$out")"
+  R_NAME="$(jq -r "map(select(.id==$R_BUILD))[0].downloads[\"server:default\"].name" <<<"$out")"
+  local vj; vj="$(api "$FILL/versions/$want")"
+  R_JAVA="$(jq -r '.version.java.version.minimum' <<<"$vj")"
+  R_FLAGS="$(jq -r '.version.java.flags.recommended | join(" ")' <<<"$vj")"
+}
+
+java_bin_for() {   # java_bin_for <min> → ruta a java >= min
+  local min="$1" d v
+  for d in "$PREFIX"/lib/jvm/java-*-openjdk "$PREFIX"/opt/openjdk*; do
+    [[ -x "$d/bin/java" ]] || continue
+    v="$(basename "$d" | grep -oE '[0-9]+' | head -1)"
+    [[ -n "$v" && "$v" -ge "$min" ]] && { echo "$d/bin/java"; return 0; }
+  done
+  if command -v java >/dev/null 2>&1; then
+    v="$(java -version 2>&1 | grep -oE 'version "[0-9]+' | grep -oE '[0-9]+$')"
+    [[ -n "$v" && "$v" -ge "$min" ]] && { command -v java; return 0; }
+  fi
+  return 1
+}
+
+ensure_java() {
+  local min="$1" jb
+  if ! jb="$(java_bin_for "$min")"; then
+    info "pkg install openjdk-${min} (Paper ${R_VERSION} exige Java ≥ ${min})"
+    pkg install -y "openjdk-${min}" || die "no se pudo instalar openjdk-${min}"
+    jb="$(java_bin_for "$min")" || die "openjdk-${min} instalado pero no encuentro java"
+  fi
+  state_set MC_JAVA_BIN "$jb"
+  echo "    java: $jb ($("$jb" -version 2>&1 | head -1))"
+}
+
+download_paper() {
+  mkdir -p "$MC_DIR"
+  local jar="$MC_DIR/$R_NAME"
+  if [[ -f "$jar" ]] && echo "$R_SHA  $jar" | sha256sum -c --status; then
+    info "Paper $R_VERSION build $R_BUILD ya descargado"
+  else
+    info "Descargando $R_NAME"
+    curl -fsSL -m 600 -A "$UA" -o "${jar}.part" "$R_URL" || die "descarga fallida: $R_URL"
+    echo "$R_SHA  ${jar}.part" | sha256sum -c --status || { rm -f "${jar}.part"; die "sha256 NO coincide para $R_NAME"; }
+    mv -f "${jar}.part" "$jar"
+    echo "    sha256 OK ($R_SHA)"
+  fi
+  ln -sfn "$R_NAME" "$MC_DIR/paper.jar"
+  state_set PAPER_VERSION "$R_VERSION"; state_set PAPER_BUILD "$R_BUILD"
+  state_set PAPER_SHA256 "$R_SHA"; state_set JAVA_MIN "$R_JAVA"; state_set JAVA_FLAGS "$R_FLAGS"
+}
+
+prop_set_default() {   # solo si la clave no existe (respeta cambios del usuario)
+  local f="$MC_DIR/server.properties"
+  touch "$f"
+  grep -q "^$1=" "$f" || printf '%s=%s\n' "$1" "$2" >>"$f"
+}
+
+write_server_files() {
+  if ! grep -qs '^eula=true' "$MC_DIR/eula.txt"; then
+    printf '# Aceptada al instalar con mc-server (https://aka.ms/MinecraftEULA)\neula=true\n' >"$MC_DIR/eula.txt"
+    echo "    eula=true — EULA de Mojang: https://www.minecraft.net/eula"
+  fi
+  prop_set_default online-mode true
+  prop_set_default server-port "$MC_PORT"
+  prop_set_default view-distance 8
+  prop_set_default simulation-distance 6
+  prop_set_default max-players 8
+  prop_set_default sync-chunk-writes false
+  prop_set_default motd "$MC_MOTD"
+  prop_set_default enable-rcon false
+  prop_set_default enable-query false
+  prop_set_default network-compression-threshold 256
+}
+
+install_service() {
+  local d="$SVDIR/$MC_SVC" src=""
+  for src in "$(dirname "$(readlink -f "$0")")/services/minecraft/run" \
+             "${HOME}/storage/shared/Download/llm-setup/termux/services/minecraft/run" \
+             "${HOME}/storage/shared/Download/llm-setup/services/minecraft/run"; do
+    [[ -f "$src" ]] && break; src=""
+  done
+  mkdir -p "$d/log"
+  if [[ -n "$src" ]]; then
+    tr -d '\r' <"$src" >"$d/run"
+  else
+    cat >"$d/run" <<'RUN'
+#!/data/data/com.termux/files/usr/bin/sh
+# Runit: servidor Minecraft Java (Paper). Normalmente DESHABILITADO (fichero down):
+# lo arrancan `mode gaming` / `mc-server start`. Parada limpia: `mc-server stop` («stop» por la consola).
+export PATH="${HOME}/bin:${PREFIX}/bin:${PATH}"
+exec "${HOME}/bin/mc-server" _run 2>&1
+RUN
+  fi
+  chmod +x "$d/run"
+  [[ -e "$d/supervise/ok" ]] && mc_running || touch "$d/down"
+  echo "    runit: $d (deshabilitado; mode gaming / mc-server start)"
+}
+
+geyser_install() {
+  mkdir -p "$MC_DIR/plugins"
+  local p url sha j
+  for p in geyser floodgate; do
+    j="$(api "https://download.geysermc.org/v2/projects/$p/versions/latest/builds/latest")" || die "API GeyserMC no responde"
+    sha="$(jq -r '.downloads.spigot.sha256' <<<"$j")"
+    url="https://download.geysermc.org/v2/projects/$p/versions/latest/builds/latest/downloads/spigot"
+    info "Descargando $p (spigot) build $(jq -r '.build' <<<"$j")"
+    curl -fsSL -m 300 -A "$UA" -o "$MC_DIR/plugins/.${p}.part" "$url" || die "descarga $p fallida"
+    echo "$sha  $MC_DIR/plugins/.${p}.part" | sha256sum -c --status || die "sha256 de $p NO coincide"
+    mv -f "$MC_DIR/plugins/.${p}.part" "$MC_DIR/plugins/${p^}-Spigot.jar"
+  done
+  state_set GEYSER 1
+  echo "    Bedrock: UDP 19132 (config: plugins/Geyser-Spigot/config.yml). Reinicia: mc-server restart"
+}
+
+geyser_remove() {
+  rm -f "$MC_DIR/plugins/Geyser-Spigot.jar" "$MC_DIR/plugins/Floodgate-Spigot.jar"
+  state_set GEYSER 0
+  echo "Geyser/Floodgate quitados (sus carpetas de config se conservan). mc-server restart"
+}
+
+cmd_install() {
+  local ver="$MC_VERSION" geyser="${MC_GEYSER:-0}"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --geyser) geyser=1 ;;
+      --version) ver="${2:?}"; shift ;;
+      *) die "opción desconocida: $1" ;;
+    esac
+    shift
+  done
+  command -v jq >/dev/null 2>&1 || pkg install -y jq
+  info "Consultando la API de PaperMC (fill v3)"
+  resolve_paper "$ver"
+  echo "    Paper $R_VERSION build $R_BUILD (STABLE) · Java ≥ $R_JAVA"
+  ensure_java "$R_JAVA"
+  download_paper
+  write_server_files
+  install_service
+  [[ "$geyser" == "1" ]] && geyser_install
+  mkdir -p "$MC_CONF_DIR"
+  echo "Listo: $MC_DIR · arranca con: mode gaming   (o mc-server start)"
+}
+
+cmd_update() {
+  local ver="$MC_VERSION"
+  [[ "${1:-}" == "--version" ]] && ver="${2:?}"
+  resolve_paper "$ver"
+  if [[ "$(state_get PAPER_VERSION)" == "$R_VERSION" && "$(state_get PAPER_BUILD)" == "$R_BUILD" ]]; then
+    echo "Al día: Paper $R_VERSION build $R_BUILD"; return 0
+  fi
+  echo "Actualizando: $(state_get PAPER_VERSION)#$(state_get PAPER_BUILD) → $R_VERSION#$R_BUILD"
+  [[ "$(state_get PAPER_VERSION)" != "$R_VERSION" ]] && echo "AVISO: cambio de versión de Minecraft: haz mc-server backup antes (no hay vuelta atrás del mundo)."
+  ensure_java "$R_JAVA"
+  download_paper
+  if mc_running; then cmd_stop && cmd_start; fi
+}
+
+# --- ejecución bajo runit ---
+cmd_run() {
+  cd "$MC_DIR" || { echo "mc-server: falta $MC_DIR (mc-server install)"; sleep 10; exit 1; }
+  local jb flags
+  local jm; jm="$(state_get JAVA_MIN)"
+  jb="$(state_get MC_JAVA_BIN)"; [[ -x "$jb" ]] || jb="$(java_bin_for "${jm:-21}")" || { echo "mc-server: sin java ≥ ${jm:-21}"; sleep 10; exit 1; }
+  flags="$(state_get JAVA_FLAGS)"; [[ -n "$flags" ]] || flags="$AIKAR_FLAGS"
+  [[ "$MC_PRETOUCH" == "1" ]] || flags="${flags//-XX:+AlwaysPreTouch/}"
+  [[ -p "$MC_FIFO" ]] || { rm -f "$MC_FIFO"; mkfifo -m 600 "$MC_FIFO"; }
+  # FIFO abierto en lectura+escritura: stdin nunca da EOF aunque no haya escritores
+  exec 3<>"$MC_FIFO"
+  # Java en Termux no detecta la zona horaria de Android (logs en UTC): se la pasamos
+  local tz; tz="$(getprop persist.sys.timezone 2>/dev/null)"; tz="${tz:-${TZ:-UTC}}"
+  # shellcheck disable=SC2086
+  exec "$jb" -Xms"$MC_XMS" -Xmx"$MC_XMX" $flags $MC_JAVA_OPTS_EXTRA "$MC_MARK" -Duser.timezone="$tz" \
+    -Dterminal.jline=false -Dterminal.ansi=false -Dfile.encoding=UTF-8 \
+    -jar paper.jar --nogui <&3
+}
+
+console_send() {
+  mc_running || die "el servidor no está en marcha"
+  [[ -p "$MC_FIFO" ]] || die "falta $MC_FIFO"
+  printf '%s\n' "$*" >"$MC_FIFO"
+}
+
+log_inode() { stat -c %i "$MC_LOG" 2>/dev/null || echo 0; }
+
+sv_ok() { [[ -e "$SVDIR/$MC_SVC/supervise/ok" ]] && pgrep -f "[r]unsv ${MC_SVC}\$" >/dev/null 2>&1; }
+
+ensure_runsvdir() {
+  if ! pgrep -f "[r]unsvdir ${PREFIX}/var/service" >/dev/null 2>&1 && [[ -f "${PREFIX}/etc/profile.d/start-services.sh" ]]; then
+    # shellcheck source=/dev/null
+    . "${PREFIX}/etc/profile.d/start-services.sh"; sleep 1
+  fi
+}
+
+cmd_start() {
+  [[ -f "$MC_DIR/paper.jar" ]] || die "no instalado: mc-server install"
+  [[ -d "$SVDIR/$MC_SVC" ]] || install_service
+  if mc_running; then echo "minecraft ya en marcha (pid $(mc_pid))"; return 0; fi
+  ensure_runsvdir
+  local ino t0 i
+  ino="$(log_inode)"; t0="$(date +%s)"
+  rm -f "$SVDIR/$MC_SVC/down"
+  for i in $(seq 1 10); do sv_ok && break; sleep 1; done   # runsvdir lo recoge en ≤5 s
+  sv_ok && sv up "$MC_SVC" >/dev/null 2>&1
+  info "Arrancando Paper $(state_get PAPER_VERSION) (heap ${MC_XMS}–${MC_XMX}); log: $MC_LOG"
+  for ((i = 0; i < MC_START_TIMEOUT; i += 2)); do
+    if [[ "$(log_inode)" != "$ino" ]] && grep -q 'Done (' "$MC_LOG" 2>/dev/null; then
+      echo "Listo en $(( $(date +%s) - t0 )) s: $(grep -m1 -o 'Done ([^)]*)!.*' "$MC_LOG")"
+      echo "Conecta: $(tailscale_ip || echo '<IP-tailscale>'):${MC_PORT} (Java Edition, misma versión ${R_VERSION:-$(state_get PAPER_VERSION)})"
+      return 0
+    fi
+    if [[ $i -gt 20 ]] && ! mc_running; then
+      echo "mc-server: java terminó durante el arranque. Últimas líneas:" >&2
+      tail -n 25 "$MC_LOG" >&2 2>/dev/null
+      return 1
+    fi
+    sleep 2
+  done
+  echo "mc-server: sin «Done» en ${MC_START_TIMEOUT} s (sigue arrancando; mc-server logs -f)" >&2
+  return 1
+}
+
+cmd_stop() {
+  local d="$SVDIR/$MC_SVC" i
+  if ! mc_running; then
+    touch "$d/down" 2>/dev/null; sv_ok && sv down "$MC_SVC" >/dev/null 2>&1
+    echo "minecraft: parado"; return 0
+  fi
+  # once = no reiniciar al salir; luego «stop» por la consola (guarda mundos y sale)
+  touch "$d/down" 2>/dev/null
+  sv_ok && sv once "$MC_SVC" >/dev/null 2>&1
+  info "Parando minecraft (stop por consola; guarda el mundo)..."
+  console_send stop
+  for ((i = 0; i < MC_STOP_TIMEOUT; i++)); do
+    mc_running || { sv_ok && sv down "$MC_SVC" >/dev/null 2>&1; echo "minecraft: parado limpio en ${i} s"; return 0; }
+    sleep 1
+  done
+  echo "AVISO: no salió en ${MC_STOP_TIMEOUT} s — SIGTERM (el hook de apagado guarda igualmente)" >&2
+  sv_ok && sv down "$MC_SVC" >/dev/null 2>&1 || kill "$(mc_pid)" 2>/dev/null
+  for i in $(seq 1 30); do mc_running || return 0; sleep 1; done
+  kill -9 "$(mc_pid)" 2>/dev/null; return 1
+}
+
+cmd_cmd() {
+  [[ $# -gt 0 ]] || die 'uso: mc-server cmd "<comando>"'
+  local sz; sz="$(stat -c %s "$MC_LOG" 2>/dev/null || echo 0)"
+  console_send "$*"
+  sleep "${MC_CMD_WAIT:-2}"
+  tail -c +"$((sz + 1))" "$MC_LOG" 2>/dev/null
+}
+
+cmd_console() {
+  mc_running || die "el servidor no está en marcha (mode gaming)"
+  echo "Consola de Minecraft — escribe comandos (sin /). Ctrl+D sale sin parar el servidor."
+  tail -n 20 -F "$MC_LOG" 2>/dev/null &
+  local tp=$! line
+  trap 'kill $tp 2>/dev/null' EXIT
+  while IFS= read -r -e line; do
+    [[ -n "$line" ]] && printf '%s\n' "$line" >"$MC_FIFO"
+  done
+}
+
+cmd_logs() {
+  local follow=0 n=50
+  for a in "$@"; do [[ "$a" == "-f" ]] && follow=1 || n="$a"; done
+  if [[ "$follow" == "1" ]]; then tail -n "$n" -F "$MC_LOG"; else tail -n "$n" "$MC_LOG"; fi
+}
+
+cmd_backup() {
+  mkdir -p "$MC_BACKUP_DIR"
+  local level ts out items=() w
+  level="$(sed -n 's/^level-name=//p' "$MC_DIR/server.properties" 2>/dev/null | tr -d '\r')"; level="${level:-world}"
+  ts="$(date +%Y%m%d-%H%M%S)"; out="$MC_BACKUP_DIR/paper-${ts}.tar.gz"
+  if mc_running; then
+    console_send save-off; console_send "save-all flush"
+    local i; for i in $(seq 1 60); do grep -q 'Saved the game' <(tail -n 20 "$MC_LOG") && break; sleep 1; done
+  fi
+  for w in "$level" "${level}_nether" "${level}_the_end" server.properties ops.json whitelist.json \
+           banned-players.json banned-ips.json bukkit.yml spigot.yml config plugins; do
+    [[ -e "$MC_DIR/$w" ]] && items+=("$w")
+  done
+  info "Backup → $out"
+  tar -czf "$out" -C "$MC_DIR" --exclude='plugins/*.jar' --exclude='*/session.lock' "${items[@]}"
+  local rc=$?
+  mc_running && console_send save-on
+  [[ $rc -le 1 ]] || die "tar falló (rc=$rc)"
+  echo "    $(du -h "$out" | cut -f1) · conservando ${MC_BACKUP_KEEP}"
+  ls -1t "$MC_BACKUP_DIR"/paper-*.tar.gz 2>/dev/null | tail -n +"$((MC_BACKUP_KEEP + 1))" | xargs -r rm -f
+}
+
+# Server List Ping (protocolo de estado de Java Edition) → JSON {version, protocol, online, max, motd}
+slp() {
+  python3 - "${1:-127.0.0.1}" "${2:-$MC_PORT}" <<'PY' 2>/dev/null
+import json, socket, struct, sys
+host, port = sys.argv[1], int(sys.argv[2])
+def varint(n):
+    out = b""
+    while True:
+        b = n & 0x7F; n >>= 7
+        out += bytes([b | (0x80 if n else 0)])
+        if not n: return out
+def read_varint(s):
+    n = shift = 0
+    while True:
+        b = s.recv(1)
+        if not b: raise EOFError
+        b = b[0]; n |= (b & 0x7F) << shift; shift += 7
+        if not b & 0x80: return n
+s = socket.create_connection((host, port), timeout=3)
+h = host.encode()
+pkt = b"\x00" + varint(767) + varint(len(h)) + h + struct.pack(">H", port) + varint(1)
+s.sendall(varint(len(pkt)) + pkt + b"\x01\x00")
+read_varint(s); read_varint(s); ln = read_varint(s)
+data = b""
+while len(data) < ln:
+    c = s.recv(ln - len(data))
+    if not c: break
+    data += c
+j = json.loads(data)
+d = j.get("description", "")
+if isinstance(d, dict):
+    d = d.get("text", "") + "".join(x.get("text", "") for x in d.get("extra", []) if isinstance(x, dict))
+print(json.dumps({"version": j["version"]["name"], "protocol": j["version"]["protocol"],
+                  "online": j["players"]["online"], "max": j["players"]["max"], "motd": d,
+                  "players": [p.get("name") for p in j["players"].get("sample", []) or []]}, ensure_ascii=False))
+PY
+}
+
+tailscale_ip() {
+  local i ip
+  for i in tun0 tun1 tailscale0; do
+    ip="$(ip -4 addr show "$i" 2>/dev/null | awk '/inet 100\./ {sub(/\/.*/,"",$2); print $2; exit}')"
+    [[ -n "$ip" ]] && { echo "$ip"; return 0; }
+  done
+  # Android: «ip addr» no ve la VPN de la app Tailscale desde Termux; ifconfig (net-tools/busybox) sí
+  ip="$(ifconfig 2>/dev/null | grep -oE 'inet (addr:)?100\.[0-9.]+' | grep -oE '100\.[0-9.]+' | head -1)"
+  [[ -n "$ip" ]] && { echo "$ip"; return 0; }
+  return 1
+}
+
+cmd_status() {
+  local pid rss="" ping
+  pid="$(mc_pid)"
+  [[ -n "$pid" ]] && rss="$(awk '/VmRSS/ {printf "%.0f", $2/1024}' "/proc/$pid/status" 2>/dev/null)"
+  ping="$( [[ -n "$pid" ]] && slp )"
+  if [[ "${1:-}" == "--json" ]]; then
+    local b; b="$(state_get PAPER_BUILD)"
+    printf '{"running":%s,"pid":%s,"rss_mb":%s,"port":%s,"paper":"%s","build":%s,"ping":%s}\n' \
+      "$([[ -n "$pid" ]] && echo true || echo false)" "${pid:-null}" "${rss:-null}" "$MC_PORT" \
+      "$(state_get PAPER_VERSION)" "${b:-null}" "${ping:-null}"
+    return 0
+  fi
+  if [[ -z "$pid" ]]; then
+    echo "minecraft: parado · Paper $(state_get PAPER_VERSION) build $(state_get PAPER_BUILD) · $MC_DIR"
+    return 0
+  fi
+  echo "minecraft: en marcha (pid $pid, RSS ${rss:-?} MB, heap ${MC_XMS}–${MC_XMX}) · Paper $(state_get PAPER_VERSION) build $(state_get PAPER_BUILD)"
+  if [[ -n "$ping" ]]; then
+    jq -r '"  \(.version) · jugadores \(.online)/\(.max)" + (if (.players|length)>0 then " (" + (.players|join(", ")) + ")" else "" end)' <<<"$ping"
+  else
+    echo "  sin respuesta en :$MC_PORT (¿arrancando? mc-server logs -f)"
+  fi
+  echo "  conectar: $(tailscale_ip || echo '<IP-tailscale>'):${MC_PORT}"
+}
+
+c="${1:-status}"; shift || true
+case "$c" in
+  install) cmd_install "$@" ;;
+  update) cmd_update "$@" ;;
+  start) cmd_start ;;
+  stop) cmd_stop ;;
+  restart) cmd_stop; cmd_start ;;
+  status) cmd_status "$@" ;;
+  console) cmd_console ;;
+  logs) cmd_logs "$@" ;;
+  cmd) cmd_cmd "$@" ;;
+  op) [[ -n "${1:-}" ]] || die "uso: mc-server op <jugador>"; cmd_cmd "op $1" ;;
+  backup) cmd_backup ;;
+  geyser) case "${1:-}" in install) geyser_install ;; remove) geyser_remove ;; *) die "uso: mc-server geyser install|remove" ;; esac ;;
+  ping) slp "$@" || { echo "sin respuesta" >&2; exit 1; } ;;
+  _run) cmd_run ;;
+  -h|--help|help) sed -n '4,18p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) sed -n '4,18p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1 ;;
+esac

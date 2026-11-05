@@ -1,0 +1,56 @@
+# ~/.config/gt2-power/power.conf — charge-limiter + thermal-guard (bash, se hace source)
+# Copiado por install-boot-services.sh si no existe. Tras editar: sv restart charge-limiter thermal-guard
+
+# --- Limitador de carga (enchufe inteligente vía Mosquitto + Node-RED) ---
+CHARGE_ENABLED=1
+CHARGE_STOP_PCT=80          # ≥ 80 % → enchufe OFF
+CHARGE_RESUME_PCT=45        # ≤ 45 % → enchufe ON
+CHARGE_MIN_PCT=20           # ≤ 20 % → ON siempre (emergencia, ignora temperatura)
+CHARGE_TEMP_STOP_C=42       # batería ≥ 42 °C → OFF mientras carga…
+CHARGE_TEMP_RESUME_C=38     # …hasta bajar a 38 °C
+CHARGE_INTERVAL=60          # s entre lecturas de termux-battery-status
+CHARGE_REPUBLISH_S=600      # re-envío periódico de charger/want (resync del enchufe)
+CHARGE_VERIFY_GRACE=300     # s con want≠realidad («plugged») antes de avisar
+CHARGE_FAILSAFE=ON          # publicado al parar el limitador (ON = seguir cargando, más seguro para un servidor)
+
+# --- Enchufe: quién lo conmuta ---
+# nodered (defecto): el limitador solo publica gt2/power/charger/want y el flujo Node-RED manda la orden.
+# openbeken | tasmota | shelly-gen2: el limitador habla DIRECTAMENTE con el enchufe por MQTT (Node-RED
+#   opcional). Usa solo uno de los dos caminos. ELIVCO LSPA9 con OpenBeken: docs/smart-plug-openbeken.md
+PLUG_BACKEND=nodered
+PLUG_TOPIC=lspa9            # OpenBeken: Config → MQTT → «Client Topic» · Tasmota: Topic · Shelly: prefijo MQTT
+PLUG_CHANNEL=1              # OpenBeken: canal del relé («Rel;N»): CB2S/BK7231N = 1 · LN882H (BSD342-2110) = 0
+PLUG_OBK_CMD=channel        # channel = lspa9/1/set 1|0 · power = cmnd/lspa9/POWER ON|OFF (primer relé)
+PLUG_READ_POWER=1           # tras cada orden lee W (lspa9/power/get) → gt2/power/charger/plug_power
+#PLUG_REPLY_WAIT=4
+#PLUG_POWER_WAIT=12
+
+# --- Guardián térmico (LLM) ---
+THERMAL_ENABLED=1
+THERMAL_HIGH_C=40           # ≥ 40 °C (THERMAL_SAMPLES lecturas seguidas) → acción
+THERMAL_RESUME_C=37         # ≤ 37 °C → restaurar (histéresis)
+THERMAL_CRIT_C=45           # ≥ 45 °C → parar LLM siempre
+THERMAL_SAMPLES=2
+THERMAL_INTERVAL=30
+THERMAL_ACTION=throttle     # throttle (menos hilos, reinicia llama-server) | pause (SIGSTOP) | stop
+THERMAL_THREADS=2           # hilos en throttle; si el modelo ya usa ≤ 2 (SmolLM3) se usa pause
+THERMAL_AUTO_RESTART=1      # tras stop, volver a «mode llm» al enfriar (solo si el modo sigue en llm)
+
+# --- MQTT (Mosquitto local del repo: 127.0.0.1:1883 anónimo) ---
+# Un enchufe en la Wi‑Fi necesita un listener en la IP LAN del móvil (ver docs/smart-plug-openbeken.md);
+# el limitador sigue usando 127.0.0.1 (+ usuario/contraseña si quitas allow_anonymous).
+POWER_MQTT_HOST=127.0.0.1
+POWER_MQTT_PORT=1883
+POWER_MQTT_PREFIX=gt2/power
+#POWER_MQTT_USER=
+#POWER_MQTT_PASS=
+
+# --- Notificaciones ---
+POWER_NOTIFY=1              # termux-notification (requiere Termux:API)
+POWER_NOTIFY_COOLDOWN=1800  # s entre avisos repetidos
+# Hook opcional (ntfy, Gotify, correo…): ejecutable que recibe <título> <mensaje> <prioridad>.
+# Ejemplo ~/.config/gt2-power/notify-hook (chmod +x), si algún día montas ntfy:
+#   #!/data/data/com.termux/files/usr/bin/bash
+#   curl -s -H "Title: $1" -H "Priority: $([ "$3" = high ] && echo high || echo default)" -d "$2" https://ntfy.sh/<tu-topic-privado>
+#POWER_NOTIFY_HOOK=$HOME/.config/gt2-power/notify-hook
+POWER_PORTAL_REFRESH=1      # thermal-guard refresca status.json del portal cada ~5 min

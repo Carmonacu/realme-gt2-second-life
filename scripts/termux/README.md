@@ -23,7 +23,7 @@ Escucha en la **IP Tailscale** (`100.x`, interfaz `tun*`), no en toda la Wi‑Fi
 Tras `adb push` del repo a `/sdcard/Download/llm-setup/`:
 
 ```bash
-cp -f ~/storage/shared/Download/llm-setup/{llm,llm-common.sh,run-smol.sh,ssh-setup.sh,kali,kali-common.sh,kali-update,kali-uninstall,mode,mode-lib.sh,portal-status.sh} ~/bin/
+cp -f ~/storage/shared/Download/llm-setup/{llm,llm-common.sh,run-smol.sh,run-router.sh,run-qwen3b-spec.sh,ssh-setup.sh,kali,kali-common.sh,kali-update,kali-uninstall,mode,mode-lib.sh,portal-status.sh,power-lib.sh,charge-limiter,thermal-guard,gt2-screen,mc-server} ~/bin/
 chmod +x ~/bin/*
 ```
 
@@ -49,6 +49,10 @@ ssh -i $env:USERPROFILE\.ssh\realme_gt2_termux -p 8022 u0_aNNN@127.0.0.1
 ```
 
 **Una vez en Termux (si cambias de clave):** `bash ~/storage/shared/Download/llm-setup/ssh-setup.sh`
+
+## 6b. Control remoto desde otro móvil (Tailscale)
+
+Plantillas SSH (`ssh gt2`), alias, widgets y zsh en el mando: [`remote/README.md`](remote/README.md). Sustituye `100.x.y.z` por la IP Tailscale del Realme (`tailscale ip -4`).
 
 ## 7. SSH / servicios tras reboot (Termux:Boot)
 
@@ -78,7 +82,7 @@ Perfiles mutuamente excluyentes (LLM ↔ Jellyfin ↔ Kali). Tras copiar scripts
 
 ```bash
 mode status
-mode llm              # chat local (SmolLM3)
+mode llm              # chat local (router: modelos bajo demanda; ver § 12)
 mode idle             # todo pesado off
 mode pentest --shell  # para LLM + entra a Kali (sin kali --force)
 mode media            # Jellyfin (requiere install-optional-services.sh)
@@ -119,7 +123,56 @@ Una página con enlaces, modos, modelos y `status.json` en vivo (~5 MiB nginx).
 bash ~/storage/shared/Download/llm-setup/install-portal.sh
 ```
 
-Guía: [`docs/portal-homepage.md`](../../docs/portal-homepage.md). Tras `mode …`, el JSON se actualiza solo.
+Guía: [`docs/portal-homepage.md`](../../docs/portal-homepage.md). Tras `mode …`, el JSON se actualiza solo (y cada ~5 min si `thermal-guard` está activo). Muestra batería, enchufe y tok/s del LLM (`--metrics`).
+
+## 12. LLM router, KV q8_0, especulativa (b12017)
+
+`mode llm` arranca ahora un **router** (todos los modelos en :8080, carga bajo demanda, se descarga tras 10 min sin uso). Config: `cp ~/.llm.conf.example ~/.llm.conf` (o [`llm.conf.example`](llm.conf.example)).
+
+```bash
+llm router                     # primer plano (mode llm = segundo plano)
+llm models                     # estado de cada modelo
+llm unload                     # liberar RAM ya
+LLM_KV_TYPE=q8_0 llm qwen3b 8192
+llm qwen3b-spec                # Qwen 3B + borrador 0.5B
+echo 'LLM_SERVER_MODE=single' >> ~/.llm.conf   # volver al comportamiento anterior
+```
+
+API en router: el JSON **debe** llevar `"model": "smol"` (o `qwen3b`, `qwen3b-spec`, …). Guía: [`docs/termux-llm-guide.md`](../../docs/termux-llm-guide.md#router-kv-q8_0-especulativa-y-métricas-b12017). Benchmark: `bash run-llm-variants.sh` (copiar desde `scripts/bench/`).
+
+## 12b. Pantalla y rendimiento (`gt2-screen`)
+
+Con la pantalla apagada ColorOS limita `cpu4` a 1,44 GHz y el LLM cae a ~2,8 tok/s (encendida: ~8–12). `mode llm` la enciende con **`gt2-screen on`** (self-ADB vía Depuración inalámbrica; `SCREEN_CONTROL=1` en `~/.llm.conf`, defecto). Una vez: `pkg install android-tools`, Depuración inalámbrica ON, «Vincular con código» → `adb pair 127.0.0.1:<puerto> <código>`, `gt2-screen connect`.
+
+```bash
+gt2-screen status | on | off | keep-on | connect
+```
+
+El puerto de conexión cambia al reiniciar: se redescubre solo (escaneo 30000–50000, ~14 s) y se cachea en `~/.cache/gt2/adb-port`. Si dice «no hay conexión ADB»: reactiva la Depuración inalámbrica (el emparejamiento se conserva). Guía: [`docs/termux-llm-guide.md` § Pantalla y rendimiento](../../docs/termux-llm-guide.md#pantalla-y-rendimiento).
+
+## 14. Minecraft Java (Paper) — `mode gaming`
+
+```bash
+mc-server install            # Java 25 + Paper estable (API fill.papermc.io v3, sha256) + runit «minecraft»
+mode gaming                  # para LLM/Jellyfin/qBittorrent, pantalla on, arranca Paper (espera «Done»)
+mc-server status | op <nick> | cmd "tps" | console | logs -f | backup | update | geyser install
+mode media                   # para Minecraft limpio («stop» por consola) y vuelve Jellyfin
+```
+
+Conectar (Java 26.3): `100.x.y.z:25565` por Tailscale (IP del Realme: `tailscale ip -4`). Config: `~/.config/gt2-minecraft/minecraft.conf` ([`minecraft.conf.example`](minecraft.conf.example)). Guía: [`docs/minecraft-java.md`](../../docs/minecraft-java.md).
+
+## 13. Batería: limitador de carga + guardián térmico (opt-in)
+
+Requiere **Termux:API** (F-Droid) y Mosquitto + Node-RED (`install-optional-services.sh`).
+
+```bash
+bash ~/storage/shared/Download/llm-setup/install-boot-services.sh --enable-charge-limiter --enable-thermal-guard
+charge-limiter once && charge-limiter status
+thermal-guard once && thermal-guard status
+charge-limiter force off | force on | force auto
+```
+
+Node-RED → Import `~/storage/shared/Download/llm-setup/node-red/charge-limiter-flow.json` (empieza en `dry-run`; ajusta `PLUG_TYPE`/`PLUG_HOST`). Umbrales en `~/.config/gt2-power/power.conf`. Detalle y topics: [`docs/always-on-battery.md` § 9](../../docs/always-on-battery.md#9-limitador-de-carga-y-guardián-térmico-opt-in).
 
 ---
 

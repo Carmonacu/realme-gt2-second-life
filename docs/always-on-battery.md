@@ -15,6 +15,7 @@
 | **Wake-lock** | `termux-wake-lock` (scripts `llm`, `kali`, bootstrap) evita suspensión agresiva; **no** sustituye ventilación ni política de un solo servicio pesado. |
 | **Térmica** | SD888 + LLM sostenido: sensores **~38–44 °C** bajo carga (medido en sesión LLM); batería ~**32 °C** en reposo enchufado al 100%. |
 | **Cuándo NO** | Verano sin disipación, batería ya hinchada, modo ahorro activo, o intentar **dos** cargas pesadas a la vez — ver [phone-tuning.md § E](phone-tuning.md#e-mantener-el-rol-principal-política-operativa). |
+| **Automatizado (opt-in)** | **Limitador 80 % / 45 % con enchufe inteligente** (MQTT + Node-RED) y **guardián térmico** del LLM (~40 °C) — [§ 9](#9-limitador-de-carga-y-guardián-térmico-opt-in). **Sin probar en el teléfono.** |
 
 ---
 
@@ -64,7 +65,7 @@ Convertir un GT2 en servidor 24/7 **no es gratis**: es intercambiar **vida útil
 ### 2.3 Mitigaciones (ColorOS + hábito)
 
 1. **Carga inteligente / optimizada** y, si la ROM lo ofrece, **protección de carga** o tope **80–90%** para uso enchufado largo — rutas de menú en [phone-tuning.md § Carga 24/7](phone-tuning.md).
-2. Si **no** hay límite de SOC: valorar desenchufar unas horas al día (p. ej. ventana nocturna con batería suficiente solo para alarmas) — **no verificado** en este repo como automatismo; es política manual.
+2. Si **no** hay límite de SOC: enchufe inteligente + **`charge-limiter`** ([§ 9](#9-limitador-de-carga-y-guardián-térmico-opt-in)), o desenchufar a mano unas horas al día.
 3. Evitar **modo ahorro de energía** del sistema mientras Termux sirve LLM (puede congelar procesos hijos); ver [rootless-kali.md — ColorOS stability](rootless-kali.md).
 4. Monitorizar ocasionalmente con adb (opcional): `dumpsys battery` — nivel, `temperature` ( décimas °C ), estado `status=2` (charging) vs `5` (full).
 
@@ -188,6 +189,94 @@ Always-on **no** significa «LLM 24/7 **y** pentest 24/7 **y** media server 24/7
 - [ ] `termux-wake-lock` antes de jobs largos; parar LLM antes de Kali pesado
 - [ ] Revisión mensual: hinchazón, calor anómalo, autonomía si usas el móvil fuera de casa
 - [ ] (Opcional 24/7) Termux:Boot + `install-boot-services.sh` — [termux-boot-services.md](termux-boot-services.md)
+- [ ] (Opcional) `--enable-charge-limiter` + enchufe probado en `dry-run` y luego real; `--enable-thermal-guard` — [§ 9](#9-limitador-de-carga-y-guardián-térmico-opt-in)
+
+---
+
+## 9. Limitador de carga y guardián térmico (opt-in)
+
+**Estado:** implementado en el repo; **no probado en el teléfono** (lógica probada en PC con lecturas simuladas, Node-RED 4 + broker MQTT local y un enchufe Tasmota HTTP/MQTT simulado). No hay límite de carga nativo documentado para el GT2 en ColorOS 15, así que se corta la corriente desde fuera.
+
+### 9.1 Piezas
+
+| Pieza | Ruta | Qué hace |
+|-------|------|----------|
+| `charge-limiter` | [`scripts/termux/charge-limiter`](../scripts/termux/charge-limiter) + runit `services/charge-limiter` | Cada 60 s lee `termux-battery-status`, decide ON/OFF con histéresis y publica en Mosquitto (retained). Verifica que el estado real (`plugged`) coincide. |
+| Flujo Node-RED | [`scripts/termux/node-red/charge-limiter-flow.json`](../scripts/termux/node-red/charge-limiter-flow.json) | Convierte `charger/want` en la orden del enchufe; confirma, publica `plug_state` y alertas; watchdog. |
+| `thermal-guard` | [`scripts/termux/thermal-guard`](../scripts/termux/thermal-guard) + runit `services/thermal-guard` | Cada 30 s: si la batería ≥ 40 °C (2 lecturas) mitiga el LLM; ≤ 37 °C restaura; ≥ 45 °C lo para. |
+| Config | [`power.conf.example`](../scripts/termux/power.conf.example) → `~/.config/gt2-power/power.conf` | Umbrales, MQTT, notificaciones, acción térmica. |
+
+Requisitos: app **Termux:API** (F-Droid, misma firma que Termux) + `pkg install termux-api jq mosquitto`; Mosquitto + Node-RED de `install-optional-services.sh`. Con el limitador habilitado, **`mode idle` mantiene Mosquitto + Node-RED** (son ligeros) porque sin ellos el enchufe no recibe órdenes.
+
+### 9.2 Lógica de carga (defaults)
+
+| Condición | Enchufe | `reason` |
+|-----------|---------|----------|
+| batería ≤ 20 % | **ON** siempre | `emergency-low` |
+| temp ≥ 42 °C (hasta ≤ 38 °C) | OFF | `temp-high` / `temp-ok` |
+| batería ≥ 80 % | OFF | `limit` |
+| batería ≤ 45 % | ON | `resume` |
+| entre 45 y 80 % | mantiene | `hysteresis` |
+| `charge-limiter force on/off` | forzado | `manual` |
+| limitador parado (sv down / reboot) | **ON** (`CHARGE_FAILSAFE`) | `limiter-stopped` |
+
+### 9.3 Topics MQTT (prefijo `gt2/power`, todos retained)
+
+| Topic | Quién | Contenido |
+|-------|-------|-----------|
+| `battery` | móvil | JSON `{percentage, temperature, plugged, status, health, current, ts, source}` |
+| `battery/percentage` · `battery/temperature` · `battery/plugged` | móvil | valores sueltos |
+| `charger/want` · `charger/reason` | móvil | `ON`/`OFF` + motivo (se publica al cambiar y cada 10 min) |
+| `charger/state` | móvil | JSON `{want, reason, mismatch_s, mqtt_ok, ts}` |
+| `limiter/status` · `limiter/heartbeat` | móvil | `online`/`offline` · epoch cada 60 s |
+| `thermal/state` | móvil | JSON del guardián térmico |
+| `charger/plug_state` | Node-RED (o el móvil con `PLUG_BACKEND`≠`nodered`) | `ON` · `OFF` · `ERROR` · `UNCONFIRMED` · `DRYRUN-…` |
+| `charger/plug_power` | móvil (`PLUG_BACKEND`≠`nodered`) | W medidos por el enchufe (si mide) |
+| `charger/alert` | Node-RED | JSON `{ts, msg, source}` → el móvil lo convierte en notificación |
+
+### 9.4 Seguridad (nunca estado ambiguo)
+
+- **Verificación extremo a extremo:** si `want=OFF` y el móvil sigue cargando (o `ON` sin corriente) durante 5 min → notificación + reenvío de la orden.
+- **MQTT caído:** `termux-notification` «Mosquitto inaccesible — el enchufe NO recibe órdenes» (cada 30 min mientras dure).
+- **Node-RED:** errores HTTP/MQTT del enchufe → `plug_state=ERROR` + alerta; sin confirmación en 30 s → `UNCONFIRMED` + alerta; **sin latido 15 min → enchufe ON** (fail-safe) + alerta.
+- **Valores raros** en `want` → Node-RED los trata como ON. Parar el limitador publica ON.
+- `PLUG_TYPE=dry-run` por defecto: importar el flujo no conmuta nada; el móvil avisará de discrepancia a los 5 min (esperado).
+
+### 9.5 Enchufe (marca desconocida → intercambiable)
+
+**Enchufe elegido: ELIVCO LSPA9 con OpenBeken** → guía completa (variantes, cloudcutter/UART, plantillas, MQTT, calibración, pruebas): **[smart-plug-openbeken.md](smart-plug-openbeken.md)**. Con OpenBeken puedes saltarte Node-RED: `PLUG_BACKEND=openbeken`, `PLUG_TOPIC=lspa9`, `PLUG_CHANNEL=1` (LN882H: `0`) en `power.conf` y `charge-limiter` conmuta el enchufe directamente por MQTT (`charge-limiter plug state|power|on|off` para probar). También vale `tasmota` o `shelly-gen2` como backend directo.
+
+En Node-RED, pestaña **GT2 limitador de carga** → propiedades → *Environment*: `PLUG_TYPE` = `dry-run` | `openbeken-mqtt` | `tasmota-mqtt` | `tasmota-http` | `shelly-gen2-http` | `shelly-gen1-http` | `shelly-gen2-mqtt`, `PLUG_HOST` (IP para HTTP), `PLUG_MQTT_TOPIC` (topic Tasmota, id Shelly o Client Topic OpenBeken) y `PLUG_CHANNEL` (canal del relé OpenBeken). Para otra marca basta editar el `switch` del nodo *Adaptador enchufe* (una URL o un topic). Si el enchufe usa MQTT, debe apuntar al Mosquitto del móvil: el `mosquitto.conf` del repo escucha **solo en 127.0.0.1** → añade un `listener 1883 <IP-LAN>` con usuario/contraseña (ejemplo con `per_listener_settings` en [smart-plug-openbeken.md § 4](smart-plug-openbeken.md#mosquitto-del-móvil-escuchando-en-la-wi-fi)) o usa la variante HTTP (más simple).
+
+### 9.6 Guardián térmico
+
+| `THERMAL_ACTION` | Efecto | Restaurar |
+|------------------|--------|-----------|
+| `throttle` (defecto) | Escribe `~/.cache/llm/threads-override` = 2 y relanza el LLM (servicio `llama-smol` o `mode llm`) | Borra el override y relanza |
+| `pause` | `SIGSTOP` a `llama-server` (RAM y modelo intactos; peticiones esperan) | `SIGCONT` |
+| `stop` | Para el LLM | `mode llm` si el modo sigue en `llm` (`THERMAL_AUTO_RESTART=1`) |
+
+`throttle` pasa a `pause` si el modelo ya usa ≤ 2 hilos (SmolLM3) o si el LLM se lanzó a mano (`llm …` en primer plano). ≥ 45 °C siempre `stop`. Con estado `hot`/`critical`, `mode llm` se niega (salvo `MODE_IGNORE_THERMAL=1`); `mode idle` reanuda antes de matar (SIGCONT). Al parar el guardián se reanuda el LLM y se borra el override. Notificación: `termux-notification` + hook opcional `~/.config/gt2-power/notify-hook` (ntfy u otro; el repo no trae ntfy configurado).
+
+### 9.7 Activar y probar
+
+```bash
+# 0) Termux:API (F-Droid) instalada y abierta una vez; Mosquitto + Node-RED instalados
+bash ~/storage/shared/Download/llm-setup/install-optional-services.sh --no-jellyfin --no-udocker   # si faltan
+bash ~/storage/shared/Download/llm-setup/install-boot-services.sh --enable-charge-limiter --enable-thermal-guard
+termux-battery-status                 # debe devolver JSON
+charge-limiter once                   # lectura + decisión + publicación
+charge-limiter status                 # topics retenidos gt2/power/#
+thermal-guard once && thermal-guard status
+# Node-RED (http://127.0.0.1:1880, o túnel SSH -L 1880:127.0.0.1:1880): Menú → Import →
+#   ~/storage/shared/Download/llm-setup/node-red/charge-limiter-flow.json → Deploy (dry-run)
+charge-limiter force off; sleep 5; charge-limiter status   # plug_state DRYRUN-OFF
+charge-limiter force auto
+# Enchufe real: PLUG_TYPE/PLUG_HOST en la pestaña → Deploy → force off → ¿deja de cargar?
+mode status                           # batería, térmica y servicios runit
+```
+
+Prueba térmica sin calentar el móvil: `THERMAL_HIGH_C=30 THERMAL_RESUME_C=29 thermal-guard once` (dos veces) con `mode llm` y un modelo cargado; luego `thermal-guard reset`. Logs: `~/storage/shared/power-guard.log` y `sv`/`svlogd` de cada servicio.
 
 ---
 
@@ -199,4 +288,5 @@ Always-on **no** significa «LLM 24/7 **y** pentest 24/7 **y** media server 24/7
 - [termux-llm-guide.md](termux-llm-guide.md) — servidor remoto, API key, Tailscale  
 - [termux-boot-services.md](termux-boot-services.md) — sshd (y LLM opt-in) tras reboot  
 - [service-modes-design.md](service-modes-design.md) — perfiles RAM (borrador)  
+- [smart-plug-openbeken.md](smart-plug-openbeken.md) — enchufe ELIVCO LSPA9 con OpenBeken para el limitador de carga  
 - [STATUS.md](STATUS.md) — qué está operativo hoy  

@@ -26,7 +26,7 @@ pkg update -y
 pkg upgrade -y
 
 echo "[2/6] Paquetes base (termux-tools incluye termux-wake-lock)..."
-pkg install -y termux-tools curl
+pkg install -y termux-tools curl jq termux-api android-tools python   # android-tools: gt2-screen · python: mc-server ping
 
 echo "[3/6] Instalando llama.cpp b12017 (benchmarks del dispositivo)..."
 mkdir -p "${HOME}/opt/llama-b12017"
@@ -45,16 +45,27 @@ else
     pkg install -y git cmake ninja clang make libandroid-spawn
     BUILD_DIR="${HOME}/src/llama.cpp"
     if [[ ! -d "$BUILD_DIR" ]]; then
-      git clone --depth 1 https://github.com/ggml-org/llama.cpp "$BUILD_DIR"
+      git clone --depth 1 --branch b12017 https://github.com/ggml-org/llama.cpp "$BUILD_DIR"
     fi
-    cmake -S "$BUILD_DIR" -B "$BUILD_DIR/build" -DCMAKE_BUILD_TYPE=Release \
-      -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod \
+    # LLAMA_SUBPROCESS=ON: router de llama-server (OFF por defecto en Android).
+    # SUBPROCESS_HAVE_CWD=0: bionic (API 24) no declara posix_spawn_file_actions_addchdir_np
+    # (vendor/sheredom/subprocess.h); llama-server no usa el cwd del subproceso.
+    # -landroid-spawn: posix_spawn* en Termux. Probado en RMX3311 2026-11-03 (~5 min, -j6).
+    cmake -S "$BUILD_DIR" -B "$BUILD_DIR/build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
       -DLLAMA_CURL=ON \
-      -DLLAMA_BUILD_SERVER=ON
-    cmake --build "$BUILD_DIR/build" -j"$(nproc)"
+      -DLLAMA_BUILD_SERVER=ON \
+      -DLLAMA_SUBPROCESS=ON \
+      -DGGML_OPENMP=OFF \
+      -DCMAKE_C_FLAGS=-DSUBPROCESS_HAVE_CWD=0 \
+      -DCMAKE_CXX_FLAGS=-DSUBPROCESS_HAVE_CWD=0 \
+      -DCMAKE_EXE_LINKER_FLAGS=-landroid-spawn \
+      -DCMAKE_SHARED_LINKER_FLAGS=-landroid-spawn
+    cmake --build "$BUILD_DIR/build" -j"$(nproc)" --target llama-server llama-bench llama-cli
     mkdir -p "${HOME}/opt/llama-b12017"
-    cp -a "$BUILD_DIR/build/bin/"* "${HOME}/opt/llama-b12017/" 2>/dev/null || \
-      cp -a "$BUILD_DIR/build/"* "${HOME}/opt/llama-b12017/" 2>/dev/null || true
+    # Binarios + libllama/libggml*.so (los scripts ponen LD_LIBRARY_PATH=~/opt/llama-b12017)
+    cp -a "$BUILD_DIR/build/bin/"llama-server "$BUILD_DIR/build/bin/"llama-bench \
+      "$BUILD_DIR/build/bin/"llama-cli "$BUILD_DIR/build/bin/"*.so* "${HOME}/opt/llama-b12017/" 2>/dev/null || true
+    rm -f "${HOME}/.cache/llm/router-capability"
   fi
 fi
 
@@ -97,7 +108,7 @@ echo "  Inferencia: $MODEL_NATIVE | copia SD: $MODEL_SRC"
 
 echo "[5/6] Scripts en ~/bin..."
 mkdir -p "${HOME}/bin"
-for f in llm llm-common.sh run-smol.sh run-qwen3b.sh run-qwen05.sh run-ds15.sh run-phi.sh mode mode-lib.sh kali kali-common.sh; do
+for f in llm llm-common.sh run-smol.sh run-qwen3b.sh run-qwen05.sh run-ds15.sh run-phi.sh run-router.sh run-qwen3b-spec.sh mode mode-lib.sh kali kali-common.sh power-lib.sh charge-limiter thermal-guard; do
   if [[ -f "$SETUP_DIR/$f" ]]; then
     cp "$SETUP_DIR/$f" "${HOME}/bin/$f"
     chmod +x "${HOME}/bin/$f"
@@ -129,3 +140,8 @@ echo "  llm smol"
 echo ""
 echo "ColorOS: Ajustes → Opciones de desarrollador → Desactivar restricciones de procesos hijo"
 echo "Guía: docs/termux-llm-guide.md (en el repo del PC)"
+
+# Minecraft Java (opcional, ~55 MB + Java ~200 MB): BOOTSTRAP_MINECRAFT=1 bash bootstrap.sh
+if [[ "${BOOTSTRAP_MINECRAFT:-0}" == "1" && -x "${HOME}/bin/mc-server" ]]; then
+  "${HOME}/bin/mc-server" install
+fi

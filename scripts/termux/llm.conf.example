@@ -1,0 +1,36 @@
+# ~/.llm.conf — opciones de llama-server (b12017) para llm / mode llm / servicio llama-smol
+# Líneas CLAVE=valor (LLM_*, SCREEN_*). Las variables de entorno tienen prioridad (p. ej. LLM_KV_TYPE=f16 llm qwen3b).
+
+# Servidor de «mode llm» y del servicio llama-smol:
+#   router = un endpoint :8080, todos los modelos como presets, carga bajo demanda (defecto)
+#   single = comportamiento anterior (SmolLM3 fijo con run-smol.sh)
+# El router exige llama.cpp con -DLLAMA_SUBPROCESS=ON: el paquete de Termux (b12017) NO lo trae
+# («subprocess is not enabled on this build») → se cae a single automáticamente (llm router-check).
+# Con el paquete de Termux, single evita la sonda en cada arranque.
+LLM_SERVER_MODE=router
+LLM_MODELS_MAX=1            # router: modelos cargados a la vez (8 GB → 1)
+LLM_SLEEP_IDLE=600          # router: s sin peticiones → descarga el modelo de RAM (-1 = nunca)
+LLM_SINGLE_SLEEP_IDLE=-1    # igual para «llm <modelo>» (single); -1 = comportamiento anterior
+LLM_ROUTER_DEFAULT_MODEL=smol
+LLM_ROUTER_MODELS_DIR=0     # 1 = además lista todos los GGUF de ~/models con su nombre de fichero
+#LLM_PROBE_PORT=18099       # sonda del router (si está ocupado prueba los 9 siguientes; no 8090: qBittorrent)
+
+# KV cache: q8_0 (defecto; ≈ mitad de RAM de contexto, activa --flash-attn on; qwen3b gen 8.06 vs
+# 8.27 tok/s con f16) | f16 (un pelo más rápido, más RAM: úsalo solo si sobra memoria)
+LLM_KV_TYPE=q8_0
+LLM_FLASH_ATTN=auto         # auto | on | off (ignorado con KV cuantizada: siempre on)
+
+LLM_METRICS=1               # --metrics → /metrics (Prometheus) y tok/s en el portal
+
+# Especulativa (llm qwen3b-spec / preset router «qwen3b-spec»): NO es el defecto. En RMX3311
+# (CPU, borrador 0.5B) no gana nada (gen 7.95 vs 8.06 tok/s) y gasta ~0.5 GB más; se mantiene para pruebas.
+LLM_SPEC_DRAFT_N_MAX=8
+LLM_SPEC_DRAFT_N_MIN=0
+LLM_SPEC_DRAFT_P_MIN=0.75
+#LLM_SPEC_THREADS_DRAFT=2
+
+# Pantalla (gt2-screen vía self-ADB; también lo leen `mode`): con la pantalla apagada ColorOS limita
+# cpu4 a 1,44 GHz y el LLM cae de ~11 a ~2,8 tok/s. Requiere android-tools + Depuración inalámbrica
+# emparejada (docs/termux-llm-guide.md § Pantalla y rendimiento). Si falla, solo avisa.
+SCREEN_CONTROL=1            # 1 = `mode llm` enciende la pantalla (gt2-screen on) · 0 = no tocarla
+SCREEN_OFF_ON_EXIT=0        # 1 = mode media/idle/light-stack la apagan (con «Permanecer activo» no hace falta)

@@ -1,0 +1,366 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Limitador de carga vía enchufe inteligente: lee termux-battery-status y publica en Mosquitto
+# (retained) el estado de batería y el estado DESEADO del enchufe; Node-RED conmuta el enchufe.
+# Uso: charge-limiter run | once | status | force on|off|auto | test-mqtt | plug state|power|on|off
+# Enchufe: PLUG_BACKEND=nodered (Node-RED conmuta) | openbeken | tasmota | shelly-gen2 (directo por MQTT)
+# Config: ~/.config/gt2-power/power.conf (plantilla power.conf.example). Diseño: docs/always-on-battery.md §9
+set -euo pipefail
+export PATH="${HOME}/bin:${PREFIX:-/data/data/com.termux/files/usr}/bin:${PATH}"
+
+LIB=""
+for d in "$HOME/bin" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; do
+  if [[ -f "$d/power-lib.sh" ]]; then
+    # shellcheck source=power-lib.sh
+    source "$d/power-lib.sh"
+    LIB=1
+    break
+  fi
+done
+[[ -n "$LIB" ]] || { echo "Error: falta power-lib.sh en ~/bin" >&2; exit 1; }
+
+CHARGE_ENABLED="${CHARGE_ENABLED:-1}"
+CHARGE_STOP_PCT="${CHARGE_STOP_PCT:-80}"          # ≥ → enchufe OFF
+CHARGE_RESUME_PCT="${CHARGE_RESUME_PCT:-45}"      # ≤ → enchufe ON (histéresis entre ambos)
+CHARGE_MIN_PCT="${CHARGE_MIN_PCT:-20}"            # ≤ → ON siempre (emergencia, ignora temperatura)
+CHARGE_TEMP_STOP_C="${CHARGE_TEMP_STOP_C:-42}"    # ≥ → OFF (cargar calienta la celda)
+CHARGE_TEMP_RESUME_C="${CHARGE_TEMP_RESUME_C:-38}"
+CHARGE_INTERVAL="${CHARGE_INTERVAL:-60}"          # s entre lecturas
+CHARGE_REPUBLISH_S="${CHARGE_REPUBLISH_S:-600}"   # re-envía «want» aunque no cambie (resync)
+CHARGE_VERIFY_GRACE="${CHARGE_VERIFY_GRACE:-300}" # s de discrepancia want vs «plugged» antes de avisar
+CHARGE_FAILSAFE="${CHARGE_FAILSAFE:-ON}"          # estado publicado al parar el limitador (ON = cargar)
+
+STATE_FILE="${POWER_CACHE_DIR}/charge.state"
+STATE_JSON="${POWER_CACHE_DIR}/charge-state.json"
+OVERRIDE_FILE="${POWER_CACHE_DIR}/charge-override"
+
+usage() {
+  cat <<USAGE
+Uso: charge-limiter <comando>
+
+  run              Bucle (servicio runit charge-limiter)
+  once             Un ciclo: lee batería, decide y publica (diagnóstico)
+  status           Estado local + topics retenidos en Mosquitto
+  force on|off     Fuerza el estado deseado del enchufe (persistente hasta «force auto»)
+  force auto       Vuelve a umbrales (${CHARGE_RESUME_PCT}% ↔ ${CHARGE_STOP_PCT}%)
+  test-mqtt        Publica un mensaje de prueba en ${POWER_MQTT_PREFIX}/limiter/test
+  plug state       Consulta el estado real del enchufe (PLUG_BACKEND=${PLUG_BACKEND}, topic ${PLUG_TOPIC})
+  plug power       Potencia instantánea (W) si el enchufe mide consumo
+  plug on|off      Conmuta el enchufe YA (prueba; el siguiente ciclo del limitador puede revertirlo)
+
+Topics (retained, prefijo ${POWER_MQTT_PREFIX}):
+  battery                 JSON {percentage,temperature,plugged,status,health,current,ts,source}
+  battery/percentage      entero
+  battery/temperature     °C (decimal)
+  battery/plugged         PLUGGED_AC|PLUGGED_USB|PLUGGED_WIRELESS|UNPLUGGED
+  charger/want            ON|OFF  ← Node-RED conmuta el enchufe con esto
+  charger/reason          limit|resume|hysteresis|temp-high|temp-ok|emergency-low|manual|disabled|init|limiter-stopped
+  charger/state           JSON {want,reason,mismatch_s,mqtt_ok,ts}
+  limiter/status          online|offline
+  limiter/heartbeat       epoch (watchdog de Node-RED)
+  (de Node-RED o del limitador si PLUG_BACKEND≠nodered) charger/plug_state ON|OFF|ERROR|UNCONFIRMED
+  (de Node-RED) charger/alert JSON {ts,msg}
+  (PLUG_BACKEND≠nodered) charger/plug_power  W (si el enchufe mide; retained)
+USAGE
+}
+
+state_get() {
+  local key="$1"
+  [[ -f "$STATE_FILE" ]] || return 0
+  sed -n "s/^${key}=//p" "$STATE_FILE" | head -1
+}
+
+state_save() {
+  power_write_file "$STATE_FILE" "want=$1
+reason=$2
+mismatch_since=$3
+last_pub=$4
+mqtt_ok=$5
+last_alert_ts=$6"
+}
+
+# decide <pct> <temp> <prev_want> <prev_reason> <override> → "WANT REASON"
+decide() {
+  local pct="$1" temp="$2" prev="$3" prev_reason="$4" ovr="$5"
+  if [[ "$CHARGE_ENABLED" != "1" ]]; then echo "ON disabled"; return; fi
+  case "$ovr" in
+    on) echo "ON manual"; return ;;
+    off) echo "OFF manual"; return ;;
+  esac
+  if power_le "$pct" "$CHARGE_MIN_PCT"; then echo "ON emergency-low"; return; fi
+  if power_ge "$temp" "$CHARGE_TEMP_STOP_C"; then echo "OFF temp-high"; return; fi
+  if [[ "$prev_reason" == "temp-high" ]] && ! power_le "$temp" "$CHARGE_TEMP_RESUME_C"; then
+    echo "OFF temp-high"; return
+  fi
+  if power_ge "$pct" "$CHARGE_STOP_PCT"; then echo "OFF limit"; return; fi
+  if power_le "$pct" "$CHARGE_RESUME_PCT"; then echo "ON resume"; return; fi
+  # Zona de histéresis: mantener; tras enfriar (temp-high) o sin historial → cargar
+  if [[ "$prev_reason" == "temp-high" ]]; then echo "ON temp-ok"; return; fi
+  if [[ -z "$prev" ]]; then echo "ON init"; return; fi
+  echo "$prev hysteresis"
+}
+
+publish_all() {
+  local want="$1" reason="$2" mismatch_s="$3" mqtt_ok="$4" now ok=0
+  now="$(power_now)"
+  local sj
+  sj="$(jq -nc --arg w "$want" --arg r "$reason" --argjson m "$mismatch_s" --argjson q "$mqtt_ok" \
+    --argjson ts "$now" '{want:$w, reason:$r, mismatch_s:$m, mqtt_ok:($q==1), ts:$ts}')"
+  power_write_file "$STATE_JSON" "$sj"
+  power_mqtt_pub battery "$POWER_BATTERY" || ok=1
+  power_mqtt_pub battery/percentage "$(power_bat_field percentage)" || ok=1
+  power_mqtt_pub battery/temperature "$(power_bat_field temperature)" || ok=1
+  power_mqtt_pub battery/plugged "$(power_bat_field plugged)" || ok=1
+  power_mqtt_pub charger/state "$sj" || ok=1
+  power_mqtt_pub limiter/status online || ok=1
+  power_mqtt_pub limiter/heartbeat "$now" || ok=1
+  return "$ok"
+}
+
+publish_want() {
+  power_mqtt_pub charger/reason "$2" && power_mqtt_pub charger/want "$1" || return 1
+  power_plug_direct || return 0
+  drive_plug "$1"
+}
+
+# Control directo del enchufe (sin Node-RED): orden + confirmación + plug_state/plug_power
+drive_plug() {
+  local want="$1" actual watts
+  if ! power_plug_set "$want"; then
+    power_log charge "enchufe ${PLUG_BACKEND}/${PLUG_TOPIC}: fallo al publicar ${want}"
+    power_mqtt_pub charger/plug_state ERROR || true
+    power_write_file "${POWER_CACHE_DIR}/plug_state" ERROR
+    return 1
+  fi
+  sleep 1
+  if actual="$(power_plug_get)"; then
+    power_mqtt_pub charger/plug_state "$actual" || true
+    power_write_file "${POWER_CACHE_DIR}/plug_state" "$actual"
+    if [[ "$actual" != "$want" ]]; then
+      power_notify plug-confirm "Limitador de carga" \
+        "Enchufe ${PLUG_TOPIC} informa ${actual} pero se pidió ${want}" high
+    else
+      power_notify_reset plug-confirm
+    fi
+  else
+    power_log charge "enchufe ${PLUG_BACKEND}/${PLUG_TOPIC}: sin confirmación de estado"
+    power_mqtt_pub charger/plug_state UNCONFIRMED || true
+    power_write_file "${POWER_CACHE_DIR}/plug_state" UNCONFIRMED
+    power_notify plug-confirm "Limitador de carga" \
+      "Enchufe ${PLUG_TOPIC} (${PLUG_BACKEND}) no confirma el estado (¿sin Wi‑Fi/MQTT?). Se pidió ${want}." high
+  fi
+  if [[ "${PLUG_READ_POWER:-1}" == "1" ]] && watts="$(PLUG_POWER_WAIT=3 power_plug_watts 2>/dev/null)" && [[ -n "$watts" ]]; then
+    power_mqtt_pub charger/plug_power "$watts" || true
+    power_write_file "${POWER_CACHE_DIR}/plug_power" "$watts"
+  fi
+  return 0
+}
+
+check_nodered_alerts() {
+  local last_ts="$1" out line topic payload ts msg
+  command -v mosquitto_sub >/dev/null 2>&1 || { echo "$last_ts"; return 0; }
+  local args=()
+  power_mqtt_args args
+  out="$(timeout 6 mosquitto_sub "${args[@]}" -v -W 2 \
+    -t "${POWER_MQTT_PREFIX}/charger/alert" -t "${POWER_MQTT_PREFIX}/charger/plug_state" 2>/dev/null || true)"
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    topic="${line%% *}"
+    payload="${line#* }"
+    case "$topic" in
+      */charger/alert)
+        ts="$(jq -r '.ts // 0' <<<"$payload" 2>/dev/null || echo 0)"
+        msg="$(jq -r '.msg // .' <<<"$payload" 2>/dev/null || echo "$payload")"
+        if [[ "$ts" =~ ^[0-9]+$ && "$ts" -gt "$last_ts" ]]; then
+          # Alertas retenidas viejas (> 1 h, p. ej. tras reinstalar) solo se registran
+          if [[ $(( $(power_now) - ts )) -le 3600 ]]; then
+            power_notify nodered-alert "Enchufe (Node-RED)" "$msg" high --force
+          else
+            power_log charge "alerta Node-RED antigua ignorada: $msg"
+          fi
+          last_ts="$ts"
+        fi
+        ;;
+      */charger/plug_state)
+        power_plug_direct || power_write_file "${POWER_CACHE_DIR}/plug_state" "$payload"
+        ;;
+    esac
+  done <<<"$out"
+  echo "$last_ts"
+}
+
+cycle() {
+  local verbose="${1:-0}"
+  if ! power_battery_read --fresh; then
+    power_notify battery-read "Limitador de carga" \
+      "No se puede leer la batería (¿app Termux:API instalada? pkg install termux-api)" high
+    return 1
+  fi
+  power_notify_reset battery-read
+  local pct temp plugged prev prev_reason ovr=""
+  pct="$(power_bat_field percentage)"
+  temp="$(power_bat_field temperature)"
+  plugged="$(power_bat_field plugged)"
+  prev="$(state_get want)"
+  prev_reason="$(state_get reason)"
+  [[ -f "$OVERRIDE_FILE" ]] && ovr="$(tr -d '[:space:]' <"$OVERRIDE_FILE")"
+
+  local want reason
+  read -r want reason < <(decide "$pct" "$temp" "$prev" "$prev_reason" "$ovr")
+
+  local now last_pub mismatch_since last_alert mqtt_ok=1
+  now="$(power_now)"
+  last_pub="$(state_get last_pub)"; last_pub="${last_pub:-0}"
+  mismatch_since="$(state_get mismatch_since)"; mismatch_since="${mismatch_since:-0}"
+  last_alert="$(state_get last_alert_ts)"; last_alert="${last_alert:-0}"
+
+  # Verificación extremo a extremo: ¿llega corriente según lo deseado?
+  local has_power=1 mismatch_s=0
+  [[ "$plugged" == "UNPLUGGED" ]] && has_power=0
+  if { [[ "$want" == "OFF" && "$has_power" == "1" ]] || [[ "$want" == "ON" && "$has_power" == "0" ]]; }; then
+    [[ "$mismatch_since" -gt 0 ]] || mismatch_since="$now"
+    mismatch_s=$(( now - mismatch_since ))
+  else
+    if [[ "$mismatch_since" -gt 0 && $(( now - mismatch_since )) -ge "$CHARGE_VERIFY_GRACE" ]]; then
+      power_log charge "discrepancia resuelta (want=$want plugged=$plugged)"
+    fi
+    mismatch_since=0
+    power_notify_reset plug-mismatch
+  fi
+
+  local force_pub=0
+  if [[ "$mismatch_s" -ge "$CHARGE_VERIFY_GRACE" ]]; then
+    if [[ "$want" == "OFF" ]]; then
+      power_notify plug-mismatch "Limitador de carga" \
+        "Enchufe debería estar OFF (${pct}%) pero el móvil sigue cargando desde hace $((mismatch_s / 60)) min. Revisa Node-RED/enchufe." high
+    else
+      power_notify plug-mismatch "Limitador de carga" \
+        "Enchufe debería estar ON (${pct}%) pero no llega corriente desde hace $((mismatch_s / 60)) min. ¿Enchufe/cable/cargador?" high
+    fi
+    force_pub=1
+  fi
+
+  if [[ "$want" != "$prev" || "$reason" != "$prev_reason" ]]; then
+    power_log charge "want ${prev:-?}→${want} (${reason}) pct=${pct} temp=${temp} plugged=${plugged}"
+    if [[ "$want" != "$prev" && -n "$prev" ]]; then
+      power_notify "want-${want}" "Limitador de carga" "Enchufe → ${want} (${reason}, ${pct}%, ${temp} °C)" default --force
+    fi
+    force_pub=1
+  fi
+  if [[ "$force_pub" == "1" || $(( now - last_pub )) -ge "$CHARGE_REPUBLISH_S" ]]; then
+    if publish_want "$want" "$reason"; then
+      last_pub="$now"
+    else
+      mqtt_ok=0
+    fi
+  fi
+  publish_all "$want" "$reason" "$mismatch_s" "$mqtt_ok" || mqtt_ok=0
+
+  if [[ "$mqtt_ok" == "0" ]]; then
+    power_notify mqtt "Limitador de carga" \
+      "Mosquitto ${POWER_MQTT_HOST}:${POWER_MQTT_PORT} inaccesible — el enchufe NO recibe órdenes (deseado: ${want}, ${pct}%)." high
+    last_pub=0
+  else
+    if [[ -f "${POWER_CACHE_DIR}/notify-mqtt.last" ]]; then
+      power_log charge "MQTT recuperado"
+      power_notify_reset mqtt
+    fi
+    last_alert="$(check_nodered_alerts "$last_alert")"
+  fi
+
+  state_save "$want" "$reason" "$mismatch_since" "$last_pub" "$mqtt_ok" "$last_alert"
+  if [[ "$verbose" == "1" ]]; then
+    echo "batería: ${pct}% ${temp} °C ${plugged} ($(power_bat_field status), $(power_bat_field source))"
+    echo "decisión: ${want} (${reason})  override: ${ovr:-auto}  mqtt_ok: ${mqtt_ok}  discrepancia: ${mismatch_s}s"
+  fi
+  return 0
+}
+
+on_exit() {
+  trap - EXIT INT TERM
+  power_log charge "parado → publica want=${CHARGE_FAILSAFE} (limiter-stopped)"
+  power_mqtt_pub charger/reason limiter-stopped || true
+  power_mqtt_pub charger/want "$CHARGE_FAILSAFE" || true
+  if power_plug_direct; then power_plug_set "$CHARGE_FAILSAFE" || true; fi
+  power_mqtt_pub limiter/status offline || true
+  exit 0
+}
+
+cmd_run() {
+  power_require_jq || exit 1
+  command -v mosquitto_pub >/dev/null 2>&1 || power_notify mqtt "Limitador de carga" "Falta mosquitto_pub (pkg install mosquitto)" high
+  power_log charge "inicio: OFF≥${CHARGE_STOP_PCT}% ON≤${CHARGE_RESUME_PCT}% temp OFF≥${CHARGE_TEMP_STOP_C}°C cada ${CHARGE_INTERVAL}s prefijo=${POWER_MQTT_PREFIX} enchufe=${PLUG_BACKEND}${PLUG_BACKEND:+/}${PLUG_TOPIC}"
+  trap on_exit EXIT INT TERM
+  # Fuerza republicar al arrancar (Node-RED resincroniza el enchufe)
+  [[ -f "$STATE_FILE" ]] && sed -i 's/^last_pub=.*/last_pub=0/' "$STATE_FILE"
+  while true; do
+    cycle 0 || true
+    sleep "$CHARGE_INTERVAL" &
+    wait $! || true
+  done
+}
+
+cmd_status() {
+  echo "=== charge-limiter ==="
+  echo "umbrales: OFF ≥ ${CHARGE_STOP_PCT}% · ON ≤ ${CHARGE_RESUME_PCT}% · emergencia ≤ ${CHARGE_MIN_PCT}% · temp OFF ≥ ${CHARGE_TEMP_STOP_C} °C (reanuda ≤ ${CHARGE_TEMP_RESUME_C})"
+  echo "override: $(cat "$OVERRIDE_FILE" 2>/dev/null || echo auto)"
+  [[ -f "$STATE_JSON" ]] && echo "estado: $(cat "$STATE_JSON")"
+  [[ -f "$POWER_BATTERY_CACHE" ]] && echo "batería: $(cat "$POWER_BATTERY_CACHE")"
+  if power_plug_direct; then
+    echo "enchufe (${PLUG_BACKEND}, topic ${PLUG_TOPIC}$([[ $PLUG_BACKEND == openbeken ]] && echo ", canal ${PLUG_CHANNEL}")): último $(cat "${POWER_CACHE_DIR}/plug_state" 2>/dev/null || echo desconocido) · ahora $(power_plug_get 2>/dev/null || echo 'sin respuesta')"
+    [[ -f "${POWER_CACHE_DIR}/plug_power" ]] && echo "potencia (última): $(cat "${POWER_CACHE_DIR}/plug_power") W"
+  else
+    echo "enchufe (Node-RED): $(cat "${POWER_CACHE_DIR}/plug_state" 2>/dev/null || echo desconocido)"
+  fi
+  if command -v mosquitto_sub >/dev/null 2>&1; then
+    local args=()
+    power_mqtt_args args
+    echo "--- topics retenidos (${POWER_MQTT_PREFIX}/#) ---"
+    timeout 6 mosquitto_sub "${args[@]}" -v -W 2 -t "${POWER_MQTT_PREFIX}/#" 2>/dev/null || echo "(sin respuesta de Mosquitto)"
+  fi
+}
+
+main() {
+  local cmd="${1:-status}"
+  shift || true
+  case "$cmd" in
+    run) cmd_run ;;
+    once) power_require_jq || exit 1; cycle 1 ;;
+    status) cmd_status ;;
+    force)
+      case "${1:-}" in
+        on|off) echo "$1" >"$OVERRIDE_FILE"; echo "Forzado: $1 (charge-limiter force auto para volver)"; cycle 1 || true ;;
+        auto) rm -f "$OVERRIDE_FILE"; echo "Modo automático"; cycle 1 || true ;;
+        *) usage >&2; exit 1 ;;
+      esac
+      ;;
+    test-mqtt)
+      if power_mqtt_pub limiter/test "hola $(date -Iseconds)" 0; then
+        echo "OK: publicado en ${POWER_MQTT_PREFIX}/limiter/test"
+      else
+        echo "Error: no se pudo publicar en ${POWER_MQTT_HOST}:${POWER_MQTT_PORT}" >&2; exit 1
+      fi
+      ;;
+    plug)
+      if ! power_plug_direct; then
+        echo "PLUG_BACKEND=${PLUG_BACKEND}: el enchufe lo conmuta Node-RED. Pon PLUG_BACKEND=openbeken|tasmota|shelly-gen2 en power.conf" >&2
+        exit 1
+      fi
+      case "${1:-state}" in
+        state) power_plug_get || { echo "Sin respuesta de ${PLUG_TOPIC} (${PLUG_BACKEND}) en ${PLUG_REPLY_WAIT}s" >&2; exit 1; } ;;
+        power) power_plug_watts || { echo "Sin lectura de potencia de ${PLUG_TOPIC} en ${PLUG_POWER_WAIT}s" >&2; exit 1; } ;;
+        on|off)
+          w="$(tr '[:lower:]' '[:upper:]' <<<"$1")"
+          power_plug_set "$w" || exit 1
+          sleep 1
+          echo "pedido ${w}; estado: $(power_plug_get 2>/dev/null || echo 'sin respuesta')"
+          echo "(prueba manual: el limitador puede revertirlo; para fijarlo usa «charge-limiter force ${1}»)"
+          ;;
+        *) usage >&2; exit 1 ;;
+      esac
+      ;;
+    help|-h|--help) usage ;;
+    *) echo "Comando desconocido: $cmd" >&2; usage >&2; exit 1 ;;
+  esac
+}
+
+main "$@"

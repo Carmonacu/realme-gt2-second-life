@@ -48,7 +48,7 @@ Definir modos nombrados con listas explícitas de procesos permitidos:
 | `llm` (default) | `llama-server` | sshd, Tailscale | — |
 | `pentest` | proot Kali (escaneos) | sshd, wake-lock | **Parar** `llama-server` antes de entrar |
 | `media` | Jellyfin (Direct Play) | sshd, Syncthing opcional | **Parar** LLM; no transcode concurrente |
-| `gaming` *(futuro)* | JVM Minecraft (Paper/Purpur) | sshd, Tailscale | **Parar** LLM; `-Xmx2G`–`-Xmx3G`; wake-lock; puerto 25565 vía tailnet |
+| `gaming` | JVM Minecraft (Paper, `mc-server`) | sshd, Tailscale | **Parar** LLM, Jellyfin, qBittorrent; heap 2560M; pantalla on + wake-lock; puerto 25565 vía tailnet — [minecraft-java.md](minecraft-java.md) |
 | `light-stack` | ninguno | mosquitto, syncthing, sshd | LLM apagado si RAM &lt; umbral |
 | `idle` | ninguno | solo sshd + Tailscale | todo lo demás off |
 | `maintenance` *(futuro)* | ninguno (LLM off) | sshd, rclone/restic puntual | **Parar** LLM; ventana upgrade/backup; ver [second-life-ecosystem.md §4](second-life-ecosystem.md) |
@@ -111,10 +111,10 @@ Ver explicación detallada en el mensaje al usuario (Parte 1). Resumen para dise
 | Jellyfin / Plex | `media` | **Sí** (transcode); Direct Play parcial OK |
 | Node-RED + Mosquitto | `light-stack` | Parcial (apagar LLM si RAM justa) |
 | udocker / QEMU+Docker | modo `lab` experimental | **Sí** — solo con LLM apagado |
-| Minecraft Java (Paper) | `gaming` *(futuro)* | **Sí** — §3.3 |
+| Minecraft Java (Paper) | `gaming` (**operativo 2026-11-03**, [minecraft-java.md](minecraft-java.md)) | **Sí** — §3.3 |
 | Minetest / OpenTTD | `gaming` *(futuro)* | **Sí** |
 | whisper.cpp | `stt` *(futuro)* | **Sí** |
-| ntfy / Gotify | `light-stack` | No |
+| ntfy / Gotify | `light-stack` | No — hook `~/.config/gt2-power/notify-hook` ya previsto |
 | Uptime Kuma / Healthchecks | `light-stack` | No |
 | FreshRSS / Linkding | `light-stack` | No |
 | Caddy reverse proxy | infra (runit) | No |
@@ -135,7 +135,7 @@ Backlog completo (autónomas vs NAS/sync): **[second-life-ecosystem.md §4](seco
 2. ~~Definir tabla de procesos «heavy»~~ **Hecho en `mode-lib.sh`.**
 3. Añadir tests en dry-run: `mode status` desde `phone-check-remote.sh` — **parcial (v1).**
 4. Enlazado desde [second-life-ecosystem.md](second-life-ecosystem.md) y [phone-tuning.md § E](phone-tuning.md#e-mantener-el-rol-principal-política-operativa). Arranque tras reboot: [termux-boot-services.md](termux-boot-services.md) (`install-boot-services.sh` + `mode apply idle`).
-5. **Modo `gaming`:** guía mínima + hook en `mode` (OpenJDK + Paper, Geyser opcional); benchmark 2 jugadores en tailnet antes de documentar como «operativo».
+5. ~~**Modo `gaming`:** guía mínima + hook en `mode` (OpenJDK + Paper, Geyser opcional)~~ **Hecho 2026-11-03** ([minecraft-java.md](minecraft-java.md)); pendiente: benchmark con 2+ jugadores reales en tailnet.
 
 ---
 
@@ -152,6 +152,18 @@ Backlog completo (autónomas vs NAS/sync): **[second-life-ecosystem.md §4](seco
 **Boot:** por defecto **`idle`** (solo sshd + runit). Para LLM tras reinicio: `mode llm` manual, o `export TERMUX_DEFAULT_MODE=llm` antes del boot (no recomendado con Kali/media).
 
 **Log de transiciones:** `~/storage/shared/mode-transitions.log`
+
+### v1.1 (repo, 2026-11; sin probar en el teléfono)
+
+| Cambio | Detalle |
+|--------|---------|
+| `mode llm` → **router** | `run-router.sh`: un `llama-server` en :8080 con todos los modelos como presets, `--models-max 1`, descarga tras `LLM_SLEEP_IDLE` (600 s). El proceso sigue vivo (≈ 40 MiB) pero la RAM del modelo se libera. `LLM_SERVER_MODE=single` en `~/.llm.conf` = comportamiento v1; si el router no da `/health` en 30 s, fallback automático a single (anotado en el log de transiciones). Ver [termux-llm-guide.md § Router](termux-llm-guide.md#router-kv-q8_0-especulativa-y-métricas-b12017). |
+| Servicio `llama-smol` | Respeta `LLM_SERVER_MODE` (router por defecto). |
+| **thermal-guard** | Nuevo servicio runit opcional; `mode llm` se niega si el estado térmico es `hot`/`critical`; `mode_stop_llama` envía `SIGCONT` antes de matar (por si estaba en `pause`). |
+| **charge-limiter** | Si su servicio está habilitado, `idle` / `light-stack` **mantienen Mosquitto + Node-RED** (el enchufe depende de ellos). |
+| `mode status` | Muestra modo del LLM (router/single, modelo, KV), estado térmico y batería (caché). |
+
+Detalle de energía: [always-on-battery.md § 9](always-on-battery.md#9-limitador-de-carga-y-guardián-térmico-opt-in).
 
 ---
 

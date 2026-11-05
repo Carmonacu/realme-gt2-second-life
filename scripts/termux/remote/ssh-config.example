@@ -1,0 +1,14 @@
+# Copy to the REMOTE phone (second device), NOT the Realme server:
+#   mkdir -p ~/.ssh && chmod 700 ~/.ssh
+#   cp ssh-config.example ~/.ssh/config && chmod 600 ~/.ssh/config
+# Edit HostName (Tailscale 100.x of the Realme) and IdentityFile path.
+
+Host gt2
+  HostName 100.x.y.z
+  Port 8022
+  User u0_aNNN
+  IdentityFile ~/.ssh/id_ed25519_gt2
+  IdentitiesOnly yes
+  ServerAliveInterval 30
+  ServerAliveCountMax 4
+  StrictHostKeyChecking accept-new

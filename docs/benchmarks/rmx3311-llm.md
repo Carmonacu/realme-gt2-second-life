@@ -126,10 +126,67 @@ Log: [`runs/20261031-144004-sustained-SmolLM3-3B-t2-300s.log`](runs/20261031-144
 | [`scripts/bench/run-peak-rss.sh`](../../scripts/bench/run-peak-rss.sh) | VmHWM + meminfo |
 | [`scripts/bench/run-sustained.sh`](../../scripts/bench/run-sustained.sh) | Bucle térmico |
 | [`scripts/bench/cleanup-device.ps1`](../../scripts/bench/cleanup-device.ps1) | Borra modelos en tmp (opcional) |
+| [`scripts/bench/run-llm-variants.sh`](../../scripts/bench/run-llm-variants.sh) | **Termux** (no adb): KV q8_0 vs especulativa — ver abajo |
 
 Binarios PC: `downloads/llama-android/` (gitignored).
 
 ---
+
+## Variantes: router / KV q8_0 / especulativa (b12017)
+
+### Resultados 2026-11-03 — pantalla encendida (válidos)
+
+Condiciones: binario empaquetado b12017 (`llama-server` single), `-t 4`, ctx 4096, generación de 120 tokens, temp 0 (greedy), Jellyfin parado, **pantalla encendida** (brillo mínimo); `cpu4` a su máximo normal **2,42 GHz**.
+
+| Variante | Prompt (tok/s) | Generación (tok/s) |
+|----------|---------------:|-------------------:|
+| Qwen2.5-3B Q4_K_M · KV f16 (base) | 11,01 | **8,27** |
+| Qwen2.5-3B · KV q8_0 + flash-attn | 11,53 | 8,06 |
+| Qwen2.5-3B + borrador Qwen2.5-0.5B (especulativa, n-max 8, p-min 0,75) | 11,49 | 7,95 |
+| SmolLM3-3B | 10,95 | 7,22 |
+
+**Decisiones:**
+- **KV q8_0 pasa a ser el defecto** (`LLM_KV_TYPE=q8_0` en `llm-common.sh` y `llm.conf.example`): −2,5 % de generación a cambio de ≈ la mitad de RAM de KV, que en este teléfono es el recurso escaso. `LLM_KV_TYPE=f16` para volver.
+- **Especulativa sin ganancia** en CPU con borrador 0.5B (7,95 vs 8,06) y +~0,5 GiB → **no es el defecto**; el preset `qwen3b-spec` se mantiene solo para pruebas.
+
+### Pantalla apagada = throttling (misma fecha, antes)
+
+Con la pantalla apagada / Termux en segundo plano, ColorOS limita `cpu4` (`scaling_max_freq`) a **1,44 GHz** (además había ~1,7 GB de swap y load ~8): Qwen2.5-3B cayó a **~2,8 tok/s** (f16 2,84 · q8_0 2,87 · spec 2,86 · SmolLM3 2,60). **Recomendación:** para usar el LLM, **pantalla encendida con brillo mínimo** (o Termux en primer plano); las cifras con pantalla apagada no sirven para comparar variantes.
+
+Más pruebas el mismo día: con la pantalla apagada / *Dozing*, qwen3b en router **no terminó 120 tokens en 4 min**; `cmd power set-fixed-performance-mode-enabled true` (vía ADB) **no quita** el límite de 1,44 GHz. Con la pantalla encendida: **~11,8 tok/s** (qwen3b, router). Tras despertarla con `gt2-screen on` (pantalla de bloqueo, `cpu4` máx. 2,11 GHz, 17:51 CET): qwen3b 8,10 / 7,36 tok/s, smol 7,77. «Permanecer activo» mientras carga (`stay_on_while_plugged_in=15`) evita que se apague sola. Ver [Pantalla y rendimiento](../termux-llm-guide.md#pantalla-y-rendimiento).
+
+### Router (b12017 compilado en Termux, 2026-11-03)
+
+Binario propio `~/opt/llama-b12017` con `-DLLAMA_SUBPROCESS=ON` ([cómo](../termux-llm-guide.md#router-con-llamacpp-compilado-en-termux-probado-2026-11-03)), `mode llm` → router en :8080, `--models-max 1`, pantalla encendida, Jellyfin parado (MemAvailable ~3,9 GB antes de cargar). Petición `/v1/chat/completions` con 120 tokens (`ignore_eos`), temp 0; hilos según preset (smol 2, qwen3b 4). Prompt de ~75 tokens distinto al de la tabla anterior (más corto) → **no comparar el prompt tok/s** entre tablas.
+
+| Modelo | KV | Prompt (tok/s) | Generación (tok/s) | Notas |
+|--------|----|---------------:|-------------------:|-------|
+| smol (SmolLM3-3B, 2 hilos) | f16 | 24,07 | 9,29 (2.ª: 9,03) | 1.ª petición 21,9 s de pared incl. carga |
+| qwen3b (Qwen2.5-3B, 4 hilos) | f16 | 35,43 | 11,40 (2.ª: 11,60) | cambio smol→qwen3b 17,6 s incl. carga; `/metrics?model=qwen3b` 11,50 gen / 34,0 prompt |
+| smol | q8_0 | 23,58 | 9,34 (2.ª: 8,86) | |
+| qwen3b | q8_0 | 35,76 | 11,19 (2.ª: 11,16) | MemAvailable con qwen3b cargado ~1,9 GB |
+
+El router no penaliza la velocidad frente a single (las cifras son incluso mayores; el prompt es más corto y caliente). Con poca RAM (Jellyfin activo / swap lleno, ~1,7 GB libres) la carga de qwen3b llegó a ~9 min → `mode llm` antes de usar modelos grandes.
+
+### Cómo repetir
+
+Script en Termux (usa `~/models` y `~/opt/llama-b12017`, no `/data/local/tmp`):
+
+```powershell
+adb -s YOUR_ADB_SERIAL push scripts/bench/run-llm-variants.sh /sdcard/Download/llm-setup/
+```
+
+```bash
+mode idle                                   # sin llama-server activo (o --stop-llm)
+bash ~/storage/shared/Download/llm-setup/run-llm-variants.sh            # ~25–40 min con cooldowns
+bash ~/storage/shared/Download/llm-setup/run-llm-variants.sh --skip-bench --reps 1   # solo parte B
+```
+
+- **A (llama-bench):** Qwen2.5-3B `-t 4`, pp512/tg128 a profundidad 0 y 2048: `base` · `-fa 1` · `-fa 1 -ctk q8_0 -ctv q8_0`.
+- **B (llama-server `/completion`, greedy):** `base` · `kv-q8` · `spec` (borrador 0.5B) · `spec-kv-q8`; tok/s, aceptación del borrador (`timings.draft_n_accepted`), pico VmHWM.
+- Logs: `/sdcard/Download/llm-bench-runs/<ts>-llm-variants/` (`summary.md` + un log por variante). PC: `adb pull /sdcard/Download/llm-bench-runs/. docs/benchmarks/runs/`.
+
+Smoke test del script en PC x86_64 con b12017 (sin valor para el teléfono): funciona de punta a punta; en CPU x86 la KV q8_0 bajó pp a profundidad 2048 — **medir en SD888 antes de recomendarla**.
 
 ## GPU (OpenCL / Vulkan)
 

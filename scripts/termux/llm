@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# Menú: llm [smol|qwen3b|qwen05|ds15|phi] [ctx]
+# Menú: llm [smol|qwen3b|qwen3b-spec|qwen05|ds15|phi|router] [ctx] · llm models|unload
 set -euo pipefail
 
 BIN="${HOME}/bin"
@@ -13,13 +13,24 @@ Modelos (llama-server + UI web http://127.0.0.1:8080):
   qwen05   Qwen2.5-0.5B          -t 4  ctx 4096  (~51 tok/s)
   ds15     DeepSeek-R1 1.5B      -t 4  ctx 4096  (~24 tok/s)
   phi      Phi-4-mini            -t 4  ctx 2048  (~5,4 tok/s, RAM alta)
+  qwen3b-spec  Qwen2.5-3B + borrador 0.5B (especulativa, +~0,5 GiB; sin medir)
+
+Router (un endpoint, carga bajo demanda, descarga tras inactividad):
+  router   Todos los modelos anteriores como presets; «model»: "smol" en la API
+  models   Lista modelos del router y su estado (loaded/sleeping/unloaded)
+  unload   Descarga ya los modelos cargados del router (libera RAM)
+  router-check  ¿Admite este llama-server el router? (0 sí · 1 no: build sin subprocess · 2 ?)
 
 Opciones:
   --remote   Escucha en la IP Tailscale (tun*/100.x) si está activa; si no, falla salvo
              LLM_REMOTE_BIND_ALL=1 (0.0.0.0, también Wi‑Fi LAN). API key: ~/.llm-api-key
 
+Config: ~/.llm.conf (plantilla llm.conf.example): LLM_KV_TYPE=q8_0, LLM_SLEEP_IDLE, …
+
 Ejemplos:
   llm smol
+  llm router
+  LLM_KV_TYPE=q8_0 llm qwen3b 8192
   llm smol --remote
   llm phi 2048
   llm qwen3b 4096
@@ -70,6 +81,50 @@ case "$MODEL" in
     ;;
   phi)
     exec "$BIN/run-phi.sh" "${CTX:-2048}"
+    ;;
+  qwen3b-spec|spec)
+    exec "$BIN/run-qwen3b-spec.sh" "${CTX:-4096}"
+    ;;
+  router)
+    [[ -n "$CTX" ]] && export LLM_ROUTER_CTX="$CTX"
+    exec "$BIN/run-router.sh"
+    ;;
+  router-check)
+    # shellcheck source=llm-common.sh
+    source "$BIN/llm-common.sh"
+    rc=0
+    llm_router_check || rc=$?
+    case "$rc" in
+      0) echo "router: soportado ($LLAMA_SERVER)" ;;
+      1) echo "router: NO soportado — build sin subprocess (-DLLAMA_SUBPROCESS=ON); ver docs/termux-llm-guide.md" ;;
+      *) echo "router: indeterminado (sonda sin respuesta en ${LLM_ROUTER_PROBE_TIMEOUT}s; log: $LLM_CACHE_DIR/router-probe.log)" ;;
+    esac
+    exit "$rc"
+    ;;
+  models|unload)
+    # shellcheck source=llm-common.sh
+    source "$BIN/llm-common.sh"
+    llm_runtime_load
+    if ! models_json="$(curl -sf -m 5 "${LLM_CURL_AUTH[@]}" "$LLM_URL/models")"; then
+      echo "No responde $LLM_URL/models (¿router activo? llm router / mode llm)" >&2
+      exit 1
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+      echo "$models_json"
+      exit 0
+    fi
+    if [[ "$MODEL" == "models" ]]; then
+      jq -r '.data[] | "\(.id)\t\(.status.value // "?")"' <<<"$models_json"
+      exit 0
+    fi
+    loaded="$(jq -r '.data[] | select(.status.value=="loaded" or .status.value=="sleeping" or .status.value=="loading") | .id' <<<"$models_json")"
+    [[ -n "$loaded" ]] || { echo "Ningún modelo cargado."; exit 0; }
+    while IFS= read -r m; do
+      [[ -n "$m" ]] || continue
+      echo "Descargando $m ..."
+      curl -sf -m 15 "${LLM_CURL_AUTH[@]}" -H 'Content-Type: application/json' \
+        -d "{\"model\":\"$m\"}" "$LLM_URL/models/unload" >/dev/null || echo "  fallo al descargar $m" >&2
+    done <<<"$loaded"
     ;;
   help|-h|--help)
     usage 0

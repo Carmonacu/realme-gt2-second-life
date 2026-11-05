@@ -1,0 +1,5 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Runit: servidor Minecraft Java (Paper). Normalmente DESHABILITADO (fichero down):
+# lo arrancan `mode gaming` / `mc-server start`. Parada limpia: `mc-server stop` («stop» por la consola).
+export PATH="${HOME}/bin:${PREFIX}/bin:${PATH}"
+exec "${HOME}/bin/mc-server" _run 2>&1

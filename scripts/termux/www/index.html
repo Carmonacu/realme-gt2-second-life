@@ -67,6 +67,9 @@
     <span class="pill"><span class="dot" id="dot-mode"></span> Modo: <strong id="val-mode">…</strong></span>
     <span class="pill">RAM libre: <strong id="val-mem">…</strong></span>
     <span class="pill">Tailscale: <strong id="val-ts">…</strong></span>
+    <span class="pill">Batería: <strong id="val-bat">—</strong></span>
+    <span class="pill">Enchufe: <strong id="val-plug">—</strong></span>
+    <span class="pill">LLM: <strong id="val-llm">—</strong></span>
     <span class="pill meta" id="val-updated">Actualizando…</span>
   </div>
 
@@ -83,7 +86,7 @@
       <thead><tr><th>Modo</th><th>Incluye</th><th>Comando</th></tr></thead>
       <tbody>
         <tr><td><code>idle</code></td><td>Solo sshd (+ portal). Todo pesado apagado.</td><td><code>mode idle</code></td></tr>
-        <tr><td><code>llm</code></td><td><code>llama-server</code> SmolLM3, UI :8080</td><td><code>mode llm</code> / <code>llm smol</code></td></tr>
+        <tr><td><code>llm</code></td><td>Router <code>llama-server</code> :8080 (modelos bajo demanda; se descarga tras inactividad)</td><td><code>mode llm</code> / <code>llm router</code></td></tr>
         <tr><td><code>pentest</code></td><td>Kali rootless (LLM off). <code>kali</code>, nmap, msf sin DB.</td><td><code>mode pentest --shell</code></td></tr>
         <tr><td><code>media</code></td><td>Jellyfin :8096 (Direct Play; sin transcode + LLM)</td><td><code>mode media</code></td></tr>
         <tr><td><code>light-stack</code></td><td>Mosquitto :1883 + Node-RED :1880</td><td><code>mode light-stack</code></td></tr>
@@ -101,6 +104,7 @@
         <tr><td>qwen3b</td><td>Alternativa 3B multilingüe</td><td><code>llm qwen3b</code></td><td>~6,9</td></tr>
         <tr><td>qwen05</td><td>Respuestas muy rápidas, pruebas</td><td><code>llm qwen05</code></td><td>~51</td></tr>
         <tr><td>ds15</td><td>Razonamiento / CoT (estudio)</td><td><code>llm ds15</code></td><td>~24</td></tr>
+        <tr><td>qwen3b-spec</td><td>Qwen 3B + borrador 0.5B (especulativa, experimental)</td><td><code>llm qwen3b-spec</code></td><td>sin medir</td></tr>
         <tr><td>phi</td><td>Código / reasoning (RAM alta, ctx 2048)</td><td><code>llm phi</code></td><td>~5,4</td></tr>
       </tbody>
     </table>
@@ -141,7 +145,8 @@
       radarr: 'Radarr',
       sonarr: 'Sonarr',
       prowlarr: 'Prowlarr',
-      qbit: 'qBittorrent'
+      qbit: 'qBittorrent',
+      minecraft: 'Minecraft Java'
     };
 
     function baseUrl(data) {
@@ -154,6 +159,7 @@
     function serviceUrl(data, key, svc) {
       if (key === 'ssh') return null;
       if (key === 'mosquitto') return null;
+      if (key === 'minecraft') return null;
       const b = baseUrl(data);
       const path = svc.path || '/';
       return b + ':' + svc.port + path;
@@ -162,7 +168,7 @@
     function renderQuickLinks(data) {
       const el = document.getElementById('quick-links');
       el.innerHTML = '';
-      const order = ['jellyfin', 'radarr', 'sonarr', 'prowlarr', 'qbit', 'portal', 'llm', 'node_red', 'ssh'];
+      const order = ['jellyfin', 'minecraft', 'radarr', 'sonarr', 'prowlarr', 'qbit', 'portal', 'llm', 'node_red', 'ssh'];
       order.forEach(key => {
         const svc = data.services[key];
         if (!svc) return;
@@ -180,6 +186,10 @@
           a.textContent = running ? 'Abrir' : 'Abrir (puede estar apagado)';
           a.target = '_blank';
           right.appendChild(a);
+        } else if (key === 'minecraft') {
+          const d = svc.detail && svc.detail.ping;
+          right.innerHTML = '<span class="meta"><code>' + (data.tailscale_ip || '100.x') + ':' + svc.port + '</code>'
+            + (d ? ' · ' + d.version + ' · ' + d.online + '/' + d.max + ' jugadores' : '') + '</span>';
         } else if (key === 'ssh') {
           right.innerHTML = '<span class="meta"><code>ssh -p 8022 u0_aNNN@' + (data.tailscale_ip || '100.x') + '</code></span>';
         }
@@ -211,8 +221,33 @@
       document.getElementById('val-updated').textContent = 'JSON: ' + (data.updated_at || '—');
       const dot = document.getElementById('dot-mode');
       dot.className = 'dot ' + (data.heavy_processes && data.heavy_processes.length ? 'warn' : 'ok');
+      renderPower(data);
       renderQuickLinks(data);
       renderSvcTable(data);
+    }
+
+    function renderPower(data) {
+      const p = data.power || {};
+      const b = p.battery;
+      const th = p.thermal;
+      let bat = '—';
+      if (b && b.percentage != null) {
+        bat = b.percentage + ' % · ' + b.temperature + ' °C' + (b.plugged && b.plugged !== 'UNPLUGGED' ? ' ⚡' : '');
+        if (th && th.state && th.state !== 'normal') bat += ' · térmica: ' + th.state + ' (' + th.action + ')';
+      }
+      document.getElementById('val-bat').textContent = bat;
+      const c = p.charge_limiter;
+      document.getElementById('val-plug').textContent = c
+        ? ('quiere ' + c.want + ' (' + c.reason + ')' + (p.plug_state ? ' · real ' + p.plug_state : '') + (c.mqtt_ok === false ? ' · MQTT KO' : ''))
+        : '—';
+      const l = (data.services || {}).llm || {};
+      let llm = l.running ? (l.server_mode || 'activo') : 'apagado';
+      if (l.running && l.model) llm += ' · ' + l.model;
+      if (l.metrics && l.metrics.gen_tok_s) llm += ' · ' + l.metrics.gen_tok_s + ' tok/s';
+      if (l.metrics && l.metrics.draft_acceptance != null) llm += ' · draft ' + Math.round(l.metrics.draft_acceptance * 100) + ' %';
+      if (l.metrics && l.metrics.sleeping) llm += ' · dormido';
+      if (l.kv_cache && l.kv_cache !== 'f16') llm += ' · KV ' + l.kv_cache;
+      document.getElementById('val-llm').textContent = llm;
     }
 
     async function refresh() {

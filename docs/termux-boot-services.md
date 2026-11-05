@@ -122,7 +122,13 @@ sv-enable sshd     # autostart con start-services
 sv-enable llama-smol
 sv-disable llama-smol
 pkill -f llama-server
+
+# Energía (opt-in; o --enable-charge-limiter / --enable-thermal-guard al instalar)
+sv-enable charge-limiter     # requiere Termux:API + mosquitto + node-red
+sv-enable thermal-guard
 ```
+
+`llama-smol` arranca el **router** por defecto (`LLM_SERVER_MODE` en `~/.llm.conf`): sin peticiones apenas usa RAM. Energía: [always-on-battery.md § 9](always-on-battery.md#9-limitador-de-carga-y-guardián-térmico-opt-in).
 
 **Modo remoto al boot:** no está automatizado (Tailscale + API key). Sigue siendo manual: `llm smol --remote` cuando la VPN esté activa.
 
@@ -145,7 +151,8 @@ Quita el script Termux:Boot y deshabilita servicios runit custom; **no** desinst
 | `scripts/termux/boot/start-services` | Plantilla → `~/.termux/boot/` |
 | `scripts/termux/install-boot-services.sh` | Instalador en el teléfono |
 | `scripts/termux/uninstall-boot-services.sh` | Reversión |
-| `scripts/termux/services/llama-smol/run` | Servicio runit opcional |
+| `scripts/termux/services/llama-smol/run` | Servicio runit opcional (router o single) |
+| `scripts/termux/services/charge-limiter/run` · `thermal-guard/run` | Servicios runit opcionales de energía |
 | `scripts/windows/push-termux-boot.ps1` | `adb push` desde Windows |
 
 **Referencias upstream:** [Termux:Boot README](https://github.com/termux/termux-boot/blob/master/README.md), [termux-services](https://github.com/termux/termux-services), [Termux Wiki — Termux:Boot](https://wiki.termux.dev/wiki/Termux:Boot).

@@ -47,7 +47,7 @@ start_qbit() {
   nohup qbittorrent-nox \
     --webui-port="${QBIT_WEB_PORT}" \
     --profile="${QBIT_PROFILE}" \
-    >>"$QBIT_LOG" 2>&1 &
+    </dev/null >>"$QBIT_LOG" 2>&1 9>&- &
   sleep 2
   echo "qBittorrent WebUI: http://127.0.0.1:${QBIT_WEB_PORT}/"
 }
