@@ -50,6 +50,10 @@ ssh -i $env:USERPROFILE\.ssh\realme_gt2_termux -p 8022 u0_aNNN@127.0.0.1
 
 **Una vez en Termux (si cambias de clave):** `bash ~/storage/shared/Download/llm-setup/ssh-setup.sh`
 
+## 6b. Control remoto desde otro móvil (Tailscale)
+
+Plantillas SSH (`ssh gt2`), alias, widgets y zsh en el mando: [`remote/README.md`](remote/README.md). Sustituye `100.x.y.z` por la IP Tailscale del Realme (`tailscale ip -4`).
+
 ## 7. SSH / servicios tras reboot (Termux:Boot)
 
 ```powershell
@@ -155,7 +159,7 @@ mc-server status | op <nick> | cmd "tps" | console | logs -f | backup | update |
 mode media                   # para Minecraft limpio («stop» por consola) y vuelve Jellyfin
 ```
 
-Conectar (Java 26.3): `100.127.134.111:25565` por Tailscale. Config: `~/.config/gt2-minecraft/minecraft.conf` ([`minecraft.conf.example`](minecraft.conf.example)). Guía: [`docs/minecraft-java.md`](../../docs/minecraft-java.md).
+Conectar (Java 26.3): `100.x.y.z:25565` por Tailscale (IP del Realme: `tailscale ip -4`). Config: `~/.config/gt2-minecraft/minecraft.conf` ([`minecraft.conf.example`](minecraft.conf.example)). Guía: [`docs/minecraft-java.md`](../../docs/minecraft-java.md).
 
 ## 13. Batería: limitador de carga + guardián térmico (opt-in)
 
