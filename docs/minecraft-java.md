@@ -10,7 +10,7 @@ Servidor **Minecraft Java Edition** con **Paper** en Termux (sin root ni proot),
 | Backups | `~/minecraft/backups/paper-AAAAMMDD-HHMMSS.tar.gz` (se conservan 5) |
 | Config | `~/.config/gt2-minecraft/minecraft.conf` (plantilla [`minecraft.conf.example`](../scripts/termux/minecraft.conf.example)) |
 | Puerto | **25565/TCP** (Java) · 19132/UDP solo con Geyser |
-| Conectar | **`100.127.134.111:25565`** (IP Tailscale del teléfono) o `<IP-LAN>:25565` en la misma Wi-Fi |
+| Conectar | **`100.x.y.z:25565`** (IP Tailscale del teléfono; en Termux: `tailscale ip -4`) o `<IP-LAN>:25565` en la misma Wi-Fi |
 
 ## Uso rápido
 
@@ -26,7 +26,7 @@ mc-server backup         # copia en caliente (save-off → save-all flush → ta
 mode media               # sale de gaming: «stop» limpio (guarda el mundo) y vuelve Jellyfin
 ```
 
-En el cliente: **Multijugador → Añadir servidor → `100.127.134.111:25565`** (el PC/móvil del jugador tiene que estar en la tailnet). El cliente debe ser **la misma versión** (26.3); `online-mode=true` exige cuentas Java legítimas.
+En el cliente: **Multijugador → Añadir servidor → `100.x.y.z:25565`** (sustituye por la IP tailnet del teléfono; el PC/móvil del jugador tiene que estar en la tailnet). El cliente debe ser **la misma versión** (26.3); `online-mode=true` exige cuentas Java legítimas.
 
 **EULA:** `mc-server install` escribe `eula=true` porque al instalar el servidor aceptas el [EULA de Minecraft](https://www.minecraft.net/eula) (Mojang). Si no lo aceptas, no lo instales.
 
@@ -112,4 +112,4 @@ El servidor solo se publica en la tailnet y la LAN. Opciones, ninguna configurad
 | Lag / TPS < 20 con la pantalla apagada | ColorOS limita la CPU: `gt2-screen on` (ver guía de pantalla) |
 | «java terminó durante el arranque» | `mc-server logs 80`; Java antigua → `mc-server install` instala la correcta |
 | El cliente dice «Outdated server/client» | Versión distinta: actualiza el cliente o fija `MC_VERSION` |
-| No conecta desde fuera | ¿El jugador está en la tailnet? `mc-server ping 100.127.134.111` desde el teléfono |
+| No conecta desde fuera | ¿El jugador está en la tailnet? `mc-server ping $(tailscale ip -4)` desde el teléfono |

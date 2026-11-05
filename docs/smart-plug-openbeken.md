@@ -71,7 +71,7 @@ Para confirmarlo **abriéndolo** (desenchufado): las dos mitades van ligeramente
    El **canal del relé** (número tras `Rel;`) es el que usa MQTT: **1** en las plantillas BK7231N, **0** en la LN882H.
 4. **Config → «Configure Startup»:** estado inicial del canal del relé = **1 (ON)** o **-1 (recordar último)**. Para un móvil-servidor es más seguro **ON**: si el enchufe se reinicia, el móvil sigue cargando y `charge-limiter` lo volverá a apagar en ≤ 60 s.
 5. **Config → «Configure MQTT»:**
-   - **Host:** IP LAN (Wi‑Fi) del móvil, p. ej. `192.168.1.40` · **Port:** `1883`
+   - **Host:** IP LAN (Wi‑Fi) del móvil, p. ej. `192.168.x.y` (reserva DHCP) · **Port:** `1883`
    - **Client Topic (Base Topic):** `lspa9` (= `PLUG_TOPIC`)
    - **User / Password:** los del listener LAN de Mosquitto (abajo)
    - El enchufe **no puede usar Tailscale** (no es un nodo de la tailnet): tiene que llegar al móvil por la Wi‑Fi de casa. Tailscale sirve para que *tú* veas Mosquitto/Node-RED desde fuera.
@@ -88,7 +88,7 @@ listener 1883 127.0.0.1
 allow_anonymous true
 
 # IP Wi‑Fi del móvil (reserva DHCP en el router). bind_interface necesita root en este kernel → IP fija.
-listener 1883 192.168.1.40
+listener 1883 192.168.x.y
 allow_anonymous false
 password_file /data/data/com.termux/files/home/.mosquitto/passwd
 
