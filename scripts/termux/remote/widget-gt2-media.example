@@ -1,0 +1,14 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Termux:Widget — install as executable:
+#   mkdir -p ~/.termux/widget
+#   cp widget-gt2-media.example ~/.termux/widget/gt2-media
+#   chmod +x ~/.termux/widget/gt2-media
+# Long-press home screen → Widget → Termux:Widget → pick script.
+
+export PATH="$HOME/bin:$PREFIX/bin:$PATH"
+if ssh -o BatchMode=yes -o ConnectTimeout=20 gt2 '~/bin/mode media && ~/bin/media-stack start'; then
+  command -v termux-toast >/dev/null && termux-toast "GT2: media + stack OK"
+else
+  command -v termux-vibrate >/dev/null && termux-vibrate -d 200
+  command -v termux-toast >/dev/null && termux-toast "GT2: fallo SSH/media"
+fi

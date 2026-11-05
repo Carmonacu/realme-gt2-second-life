@@ -1,0 +1,13 @@
+# Source from ~/.zshrc or ~/.bashrc on the REMOTE Termux (after ssh config works):
+#   source ~/storage/shared/Download/llm-setup/remote/gt2-aliases.sh
+# Requires ~/.ssh/config Host gt2 (see ssh-config.example).
+
+gt2-status()  { ssh gt2 '~/bin/mode status'; }
+gt2-media()   { ssh gt2 '~/bin/mode media && ~/bin/media-stack start'; }
+gt2-media-off(){ ssh gt2 '~/bin/media-stack stop'; }
+gt2-llm()     { ssh gt2 '~/bin/mode llm'; }
+gt2-idle()    { ssh gt2 '~/bin/mode idle'; }
+# Tailscale IPv4 of the Realme (tailscale ip -4 on GT2)
+GT2_TAILSCALE_IP="${GT2_TAILSCALE_IP:-100.x.y.z}"
+gt2-portal()  { termux-open-url "http://${GT2_TAILSCALE_IP}:8081/" 2>/dev/null || \
+                  echo "Portal: http://${GT2_TAILSCALE_IP}:8081/"; }
