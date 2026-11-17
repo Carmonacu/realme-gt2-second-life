@@ -23,8 +23,55 @@ if (( max > 0 )); then
 else
   echo "n/d (adb dumpsys battery para ColorOS)"
 fi
-echo "=== tailscale (Termux ifconfig tun*; VPN real = app Android) ==="
-ifconfig 2>/dev/null | awk '/^tun/ {show=1} show && /inet 100\./ {print; exit}' || echo "sin IP 100.x en tun* (normal si solo usas app Tailscale — conéctala tras reboot)"
+echo "=== tailscale (app Android; 100.64/10 en cualquier iface o ping 100.100.100.100) ==="
+# No exigir el nombre tun*: la VPN oficial es la app Android y ifconfig
+# puede no listar bien las ifaces si /proc/net/dev deniega el acceso.
+_ts_is_cgnat() {
+  local ip="$1" a b rest
+  a="${ip%%.*}"
+  rest="${ip#*.}"
+  b="${rest%%.*}"
+  [[ "$a" == "100" && "$b" =~ ^[0-9]+$ ]] && (( b >= 64 && b <= 127 ))
+}
+_ts_found=0
+_ts_seen=" "
+_ts_report() {
+  local iface="$1" addr="$2" src="$3"
+  case "$_ts_seen" in
+    *" $addr "*) return 0 ;;
+  esac
+  _ts_seen="${_ts_seen}${addr} "
+  echo "OK: ${addr} en ${iface} (${src})"
+  _ts_found=1
+}
+if command -v ip >/dev/null 2>&1; then
+  while read -r iface addr; do
+    [[ -n "${addr:-}" ]] || continue
+    if _ts_is_cgnat "$addr"; then
+      _ts_report "$iface" "$addr" "ip"
+    fi
+  done < <(ip -4 -o addr show 2>/dev/null | awk '{iface=$2; sub(":$","",iface); split($4,a,"/"); print iface, a[1]}' || true)
+fi
+if command -v ifconfig >/dev/null 2>&1; then
+  while read -r iface addr; do
+    [[ -n "${addr:-}" ]] || continue
+    if _ts_is_cgnat "$addr"; then
+      _ts_report "$iface" "$addr" "ifconfig"
+    fi
+  done < <(ifconfig 2>/dev/null | awk '
+    /^[^ \t]/ { iface=$1; sub(":$","",iface) }
+    /inet / {
+      for (i=1;i<=NF;i++) if ($i=="inet") { ip=$(i+1); sub("addr:","",ip); print iface, ip }
+    }' || true)
+fi
+if [[ "$_ts_found" -eq 0 ]]; then
+  if ping -c 1 -W 2 100.100.100.100 >/dev/null 2>&1; then
+    echo "OK: Tailscale activo (100.100.100.100 responde; IP 100.64/10 no visible en Termux)"
+    _ts_found=1
+  else
+    echo "NO: Tailscale no detectado. Abre la app Android o activa VPN always-on (Ajustes > VPN). No uses solo tailscaled de Termux."
+  fi
+fi
 echo "=== boot / runit ==="
 if [[ -f "$HOME/.termux/boot/start-services" ]]; then
   echo "Termux:Boot script: ~/.termux/boot/start-services"
