@@ -36,7 +36,8 @@ El auto-arranque antiguo en `~/.bashrc` (`ssh-setup.sh`) sigue siendo un **respa
 ### Desde el PC (adb)
 
 ```powershell
-adb -s YOUR_ADB_SERIAL push "c:\Users\<you>\Desktop\Proyects\realme-gt2-second-life\scripts\termux\." /sdcard/Download/llm-setup/
+# Desde la raíz del repo, o: .\scripts\windows\push-termux-scripts.ps1
+adb -s YOUR_ADB_SERIAL push ".\scripts\termux\." /sdcard/Download/llm-setup/
 # o helper:
 .\scripts\windows\push-termux-boot.ps1
 ```

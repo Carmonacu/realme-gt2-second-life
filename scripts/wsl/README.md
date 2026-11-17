@@ -7,9 +7,10 @@ Kernel builds for Phase 5 run in **WSL2** (Ubuntu 22.04+). Verified: **Ubuntu 24
 From Ubuntu (WSL):
 
 ```bash
-bash /mnt/c/Users/<you>/Desktop/Proyects/realme-gt2-second-life/scripts/wsl/verify-wsl.sh
-bash /mnt/c/Users/<you>/Desktop/Proyects/realme-gt2-second-life/scripts/wsl/verify-wsl.sh --require-toolchain
-bash /mnt/c/Users/<you>/Desktop/Proyects/realme-gt2-second-life/scripts/wsl/setup-build-env.sh
+export REPO_ROOT="/mnt/c/Users/<user>/path/to/realme-gt2-second-life"   # ajusta tu clon
+bash "$REPO_ROOT/scripts/wsl/verify-wsl.sh"
+bash "$REPO_ROOT/scripts/wsl/verify-wsl.sh" --require-toolchain
+bash "$REPO_ROOT/scripts/wsl/setup-build-env.sh"
 ```
 
 Dry run: `setup-build-env.sh --dry-run`  

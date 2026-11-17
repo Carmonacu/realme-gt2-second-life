@@ -1,28 +1,30 @@
 # On-device llama-bench sweep for RMX3311 (adb, no root)
 param(
-    [string]$Serial = $env:GT2_ADB_SERIAL,
+    [string]$Serial = '',
     [string]$ModelsDir = '/data/local/tmp/models',
     [string]$LlamaDir = '/data/local/tmp/llama',
     [string]$OutFile = 'docs/benchmarks/rmx3311-llm-raw.txt'
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '..\windows\adb-serial.ps1')
+$Serial = Resolve-Gt2AdbSerial -Serial $Serial
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $RawPath = Join-Path $RepoRoot $OutFile
 New-Item -ItemType Directory -Force -Path (Split-Path $RawPath) | Out-Null
 
 function Invoke-AdbShell([string]$Cmd) {
-    adb -s $Serial shell $Cmd
+    Invoke-Gt2Adb -Serial $Serial shell $Cmd
 }
 
 function Get-BatteryTemp {
-    $out = adb -s $Serial shell dumpsys battery
+    $out = Invoke-Gt2Adb -Serial $Serial shell dumpsys battery
     if ($out -match 'temperature:\s*(\d+)') { return [int]$Matches[1] }
     return $null
 }
 
 function Get-MemAvailableKb {
-    $out = adb -s $Serial shell "grep MemAvailable /proc/meminfo"
+    $out = Invoke-Gt2Adb -Serial $Serial shell "grep MemAvailable /proc/meminfo"
     if ($out -match 'MemAvailable:\s+(\d+)') { return [int]$Matches[1] }
     return 0
 }
@@ -47,7 +49,7 @@ Set-Content -Path $RawPath -Value $header -Encoding UTF8
 
 foreach ($model in $models) {
     $remote = "$ModelsDir/$model"
-    $check = adb -s $Serial shell "test -f $remote && echo ok || echo missing"
+    $check = Invoke-Gt2Adb -Serial $Serial shell "test -f $remote && echo ok || echo missing"
     if ($check -notmatch 'ok') {
         Add-Content $RawPath "`n## SKIP $model (not on device)`n"
         continue
@@ -69,7 +71,7 @@ cd $LlamaDir
 ./llama-bench -m $remote -r 3 -ngl 0 -p 512 -n 128 -t $t -o md 2>&1
 "@
         Add-Content $RawPath "`n### threads=$t`n"
-        $result = adb -s $Serial shell $cmd
+        $result = Invoke-Gt2Adb -Serial $Serial shell $cmd
         Add-Content $RawPath ($result -join "`n")
     }
 

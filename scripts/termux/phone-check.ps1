@@ -1,6 +1,6 @@
 # Comprueba estado del teléfono vía SSH (Termux). Requiere ssh-setup.sh en el dispositivo.
 param(
-  [string]$Serial = $env:GT2_ADB_SERIAL,
+  [string]$Serial = '',
   [string]$Key = "$env:USERPROFILE\.ssh\realme_gt2_termux",
   [int]$Port = 8022,
   [string]$HostAddr = "127.0.0.1",
@@ -8,6 +8,8 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
+. (Join-Path $PSScriptRoot '..\windows\adb-serial.ps1')
+$Serial = Resolve-Gt2AdbSerial -Serial $Serial
 
 if (-not (Test-Path $Key)) {
   Write-Host "Clave SSH no encontrada: $Key" -ForegroundColor Red
@@ -21,9 +23,9 @@ if (-not (Test-Path $remoteSh)) {
 }
 
 Write-Host "==> adb forward tcp:$Port tcp:$Port (serial $Serial)"
-adb -s $Serial forward "tcp:$Port" "tcp:$Port" | Out-Null
+Invoke-Gt2Adb -Serial $Serial forward "tcp:$Port" "tcp:$Port" | Out-Null
 
-$termuxUser = (adb -s $Serial shell "stat -c %U /data/data/com.termux 2>/dev/null" | ForEach-Object { $_.Trim() })
+$termuxUser = (Invoke-Gt2Adb -Serial $Serial shell "stat -c %U /data/data/com.termux 2>/dev/null" | ForEach-Object { $_.Trim() })
 if (-not $termuxUser) {
   Write-Host "No se pudo obtener usuario Termux; usa u0_aNNN" -ForegroundColor Yellow
   $termuxUser = "u0_aNNN"

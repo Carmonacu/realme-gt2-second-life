@@ -2,6 +2,22 @@
 
 Project to port **Kali NetHunter** to the **Realme GT 2** European variant (**RMX3311**, codename **porsche**), using a custom ROM with the shared **SM8350** kernel tree and a self-built NetHunter kernel (HID/OTG, optional **qcacld-3.0** Wi-Fi injection, Docker, local AI later).
 
+## Para recién llegados (es)
+
+**TL;DR:** RMX3311 **EU** con bootloader **bloqueado** en 2026; el **Plan A** (ROM custom + kernel NetHunter) está **pausado**. El **Plan B** — ColorOS stock, Termux, LLM local, Kali rootless, SSH y Tailscale — está documentado y verificado en [docs/STATUS.md](docs/STATUS.md).
+
+| ¿Tu caso? | Empieza aquí |
+|-----------|----------------|
+| Tienes RMX3311 EU y quieres LLM / SSH / segunda vida sin unlock | [termux-llm-guide.md](docs/termux-llm-guide.md) · [rootless-kali.md](docs/rootless-kali.md) · [always-on-battery.md](docs/always-on-battery.md) (24/7 enchufado) |
+| Buscaste NetHunter completo con injection Wi‑Fi interna | [alternative-devices.md](docs/alternative-devices.md) — otro hardware suele ser más viable |
+| Unlock / custom ROM (Plan A) | [PLAN.md](docs/PLAN.md) · [unlock-research.md](docs/unlock-research.md) · fases `docs/phases/` |
+
+**Ecosistema opcional:** [second-life-ecosystem.md](docs/second-life-ecosystem.md) · media ([jellyfin-media.md](docs/jellyfin-media.md)).
+
+**Avisos:** firmware **solo EU (EX01/EUEX)**; pentest solo con autorización; riesgo de brick al flashear. **Contribuir:** issues y PRs bienvenidos — **no** subir seriales ADB, IPs Tailscale reales, claves ni dumps de particiones ([docs/publishing-notes.md](docs/publishing-notes.md)).
+
+**Licencia:** [MIT](LICENSE). Firmware Realme, Kali, Termux y llama.cpp tienen licencias propias al instalarlos.
+
 ## Hardware summary
 
 | Item | Detail |

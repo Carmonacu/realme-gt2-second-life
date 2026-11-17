@@ -33,3 +33,14 @@ downloads/*
 *.ko
 out/
 dist/
+
+# Publishing / local-only payloads (see docs/publishing-notes.md §1.4)
+*.gguf
+downloads/models/
+downloads/apps/*
+!downloads/apps/.gitkeep
+authorized_keys
+**/authorized_keys
+nethunter_backup/
+backup_*/
+*.local

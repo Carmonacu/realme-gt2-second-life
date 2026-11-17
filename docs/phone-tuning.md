@@ -179,7 +179,8 @@ Copia temporal en `/data/local/tmp/models/HuggingFaceTB_SmolLM3-3B-Q4_K_M.gguf` 
 ### PC — publicar scripts en el teléfono
 
 ```powershell
-adb -s YOUR_ADB_SERIAL push "c:\Users\<you>\Desktop\Proyects\realme-gt2-second-life\scripts\termux" /sdcard/Download/llm-setup/
+# Desde la raíz del clon (PowerShell): rutas relativas, sin `%USERPROFILE%` hardcodeado
+adb -s YOUR_ADB_SERIAL push ".\scripts\termux" /sdcard/Download/llm-setup/
 ```
 
 ### Termux — one-liners (pegar)
@@ -293,7 +294,7 @@ adb -s YOUR_ADB_SERIAL forward tcp:8022 tcp:8022
 ssh -i $env:USERPROFILE\.ssh\realme_gt2_termux -p 8022 -o StrictHostKeyChecking=accept-new u0_aNNN@127.0.0.1
 ```
 
-Tras Tailscale, sustituye `127.0.0.1` por la IP tailnet del teléfono (mismo puerto **8022**), p. ej. **`100.x.y.z`** (nombre MagicDNS: `realme-gt-2`).
+Tras Tailscale, sustituye `127.0.0.1` por la IP tailnet del teléfono (mismo puerto **8022**), p. ej. **`100.x.y.z`** (`<TAILSCALE_IP>`; MagicDNS: `example-phone.<tailnet>.ts.net`).
 
 ```powershell
 .\scripts\termux\phone-check.ps1
@@ -321,7 +322,7 @@ Detalle, verificación post-reboot y opt-in LLM: **[termux-boot-services.md](ter
 - **Verificado 2026-10-31:** VPN **CONNECTED** (`com.tailscale.ipn`), IP tailnet **`100.x.y.z/32`** en `tun1` (visible también en Termux como `tun1`).
 - Lista blanca Doze: `com.tailscale.ipn` añadido vía adb.
 
-**Modo remoto LLM (`llm smol --remote`):** el servidor enlaza a la **IP Tailscale** (`100.x`), no a `0.0.0.0`, para no exponer el puerto **8080** en la Wi‑Fi LAN. API key en **`~/.llm-api-key`** (generada con Python si el binario `openssl` de Termux falla). Pruebas: **401** sin clave, **200** con `Authorization: Bearer …` (desde el teléfono y desde el PC **omen** en la misma tailnet).
+**Modo remoto LLM (`llm smol --remote`):** el servidor enlaza a la **IP Tailscale** (`100.x`), no a `0.0.0.0`, para no exponer el puerto **8080** en la Wi‑Fi LAN. API key en **`~/.llm-api-key`** (generada con Python si el binario `openssl` de Termux falla). Pruebas: **401** sin clave, **200** con `Authorization: Bearer …` (desde el teléfono y desde otro nodo en la misma tailnet).
 
 **Alternativa Termux `pkg install tailscale`:** daemon userspace dentro de Termux, sin VPN “Always-on” del sistema; más frágil en ColorOS (Doze, sin rutas automáticas para otras apps). **Recomendado:** app Android oficial + `llm smol --remote`.
 

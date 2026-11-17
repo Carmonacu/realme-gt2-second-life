@@ -1,9 +1,9 @@
 # Notas antes de hacer público el repositorio
 
 **Objetivo:** compartir el camino **RMX3311 EU bloqueado → Plan B (Termux + LLM + Kali rootless)** sin filtrar datos personales ni claves.  
-**Última revisión:** 2026-10-31  
+**Última revisión:** 2026-11-17  
 
-**Estado (2026-10-31):** documentación de ecosistema y checklist listas; **pendiente antes del primer push público:** anonimizar serial/IP/rutas personales (§1.1), revisar `git status` (§1.4), opcional renombrar hostname Tailscale en docs.
+**Estado (2026-11-17):** el repositorio ya es **público**. Esta pasada (CAR-76) aplicó anonimización en el árbol actual, amplió `.gitignore` (§1.4), verificó MIT + README (§3) y etiquetas sugeridas (§4). **Persiste en el historial Git** información sensible de commits anteriores — ver recomendación en el PR; no se reescribió historia.
 
 ---
 
@@ -11,17 +11,17 @@
 
 ### 1.1 Debe revisarse / anonimizarse
 
-| Elemento | Dónde aparece hoy | Acción sugerida |
-|----------|-------------------|-----------------|
-| **Serial ADB** (`YOUR_ADB_SERIAL`) | [STATUS.md](STATUS.md), [device-record.md](device-record.md), [phone-tuning.md](phone-tuning.md), [termux-llm-guide.md](termux-llm-guide.md), [rootless-kali.md](rootless-kali.md), scripts `phone-check.ps1`, etc. | Sustituir por **`YOUR_ADB_SERIAL`** o omitir `-s` en ejemplos genéricos |
-| **IP Tailscale** (`100.x.y.z`) | STATUS, termux-llm-guide, phone-tuning | Usar **`100.x.y.z`** o `realme-gt-2.tailnet-name.ts.net` ficticio |
-| **Hostname Tailscale** (`realme-gt-2`) | termux-llm-guide | Aceptable si no es único globalmente; opcional renombrar a `example-phone` |
-| **Usuario Termux** (`u0_aNNN`) | Varios docs | Dejar como ejemplo **genérico** (`u0_aNNN`) — cambia por instalación |
-| **Rutas Windows personales** | `c:\Users\<you>\Desktop\...` en phone-tuning | Cambiar a `C:\Users\<you>\...\realme-gt2-second-life` |
-| **Claves SSH privadas** | No deben estar en git (`.gitignore` cubre `*.pem`) | Verificar que **nunca** se suba `realme_gt2_termux` (solo ruta `$env:USERPROFILE\.ssh\...` OK) |
-| **Clave pública en repo** | `downloads/apps/authorized_keys` (carpeta `downloads/` gitignored salvo README) | Confirmar que **no** se trackea; si se copia a docs, usar clave **de ejemplo** |
-| **API key LLM** | Solo referencias a `~/.llm-api-key` en dispositivo | **Nunca** commitear contenido del archivo |
-| **MagicDNS / nombre tailnet real** | termux-llm-guide | Generalizar si el nombre identifica tu cuenta |
+| Elemento | Dónde aparece | Estado (2026-11-17) |
+|----------|----------------|---------------------|
+| **Serial ADB** | Docs, `device-record.md`, scripts PowerShell | **Hecho** — placeholder `YOUR_ADB_SERIAL`; scripts usan `GT2_ADB_SERIAL` / `ANDROID_SERIAL` vía [`scripts/windows/adb-serial.ps1`](../scripts/windows/adb-serial.ps1) |
+| **IP Tailscale** | Guides LLM / tuning / STATUS | **Hecho** — `100.x.y.z` / `<TAILSCALE_IP>` |
+| **Hostname Tailscale** | termux-llm-guide, portal | **Hecho** — `example-phone` (hint en `portal-status.sh` configurable con `TAILSCALE_HOST_HINT`) |
+| **Usuario Termux** (`u0_aNNN`) | Varios docs | **OK** — genérico |
+| **Rutas Windows personales** | push adb, WSL | **Hecho** — rutas relativas al repo o `REPO_ROOT` / `%USERPROFILE%` sin usuario real |
+| **Claves SSH privadas** | `.gitignore` `*.pem` | **OK** — solo rutas `$env:USERPROFILE\.ssh\…` en docs |
+| **Clave pública en repo** | `downloads/apps/authorized_keys` | **OK** — `authorized_keys` y `downloads/apps/*` gitignored |
+| **API key LLM** | Solo `~/.llm-api-key` en dispositivo | **OK** — no trackeada |
+| **MagicDNS / nombre tailnet real** | termux-llm-guide | **Hecho** — sin nombres de tailnet reales |
 
 ### 1.2 Plantilla sugerida para [device-record.md](device-record.md)
 
@@ -42,12 +42,9 @@ Mantén build **RMX3311_15.0.0.1650(EX01)** — es información pública de firm
 
 ### 1.4 Archivos que no deben entrar al remoto
 
-Ya en [.gitignore](../.gitignore): `backup_porsche/`, `downloads/*` (excepto README), `.env`, claves.  
-**Antes del push:** `git status` y confirmar que no hay:
+En [.gitignore](../.gitignore): `backup_porsche/`, `downloads/*` (excepto README y `.gitkeep`), `downloads/models/`, `downloads/apps/*`, `*.gguf`, `authorized_keys`, `.env`, claves, `nethunter_backup/`, imágenes/firmware (`*.img`, `*.zip`, `*.ofp`).  
 
-- Dumps `*.img`, OTA `*.zip`, OFP  
-- Modelos GGUF en `downloads/models/` (grandes + licencia)  
-- Copias de particiones  
+**Revisión CAR-76:** `git ls-files` sin dumps, modelos GGUF ni claves; snapshots de tuning sin serial en texto.
 
 ---
 
@@ -61,7 +58,7 @@ Ya en [.gitignore](../.gitignore): `backup_porsche/`, `downloads/*` (excepto REA
 
 **Recomendación:** **MIT** para el repo completo, con README aclarando que **firmware Realme**, **Kali**, **Termux** y **llama.cpp** tienen sus propias licencias al instalarlos.
 
-Añadir archivo `LICENSE` en la raíz antes del primer release público.
+**Estado:** archivo [`LICENSE`](../LICENSE) MIT en la raíz — **hecho**.
 
 ---
 
@@ -78,11 +75,13 @@ Propuesta de bloques (español o bilingüe EN/ES):
 7. **Avisos legales** — pentest solo con autorización; EU firmware only; riesgo brick.  
 8. **Contribuir** — issues welcome; no se aceptan secretos en PRs.
 
-El README actual está orientado a **port NetHunter**; conviene un párrafo inicial honesto sobre el **estado real del dispositivo** (Plan B activo, Fases 2–7 bloqueadas).
+**Estado (2026-11-17):** [`README.md`](../README.md) incluye párrafo Plan B + sección **Para recién llegados (es)** alineada con esta lista.
 
 ---
 
 ## 4. Issues y etiquetas GitHub sugeridas
+
+Crear en el repositorio (Settings → Labels) si no existen:
 
 - `plan-b` — Termux / LLM / rootless  
 - `unlock-blocked` — investigación EU  
@@ -117,6 +116,7 @@ Documentación verificada para GT2 europeo con bootloader bloqueado: LLM local, 
 - [ ] Re-ejecutar búsqueda OTA trimestral (enlaces CDN mueren — ver device-record)  
 - [ ] Si desbloqueas otro dispositivo, bifurcar experiencia en rama o doc separado  
 - [ ] Rotar API key LLM si alguna vez se filtró en un log commitado  
+- [ ] Tras cambios locales con datos reales, `git grep` serial / `100.` / rutas de usuario antes de push  
 
 ---
 

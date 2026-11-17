@@ -25,7 +25,7 @@ wsl -d Ubuntu
 From WSL (or `wsl -d Ubuntu -- bash ...`):
 
 ```bash
-bash /mnt/c/Users/<you>/Desktop/Proyects/realme-gt2-second-life/scripts/wsl/verify-wsl.sh
+bash "/mnt/c/Users/<user>/path/to/realme-gt2-second-life/scripts/wsl/verify-wsl.sh"
 ```
 
 The script exits non-zero if the environment is not WSL2. It prints `df` for `$HOME` and `/` so you can confirm free space.
@@ -35,7 +35,7 @@ The script exits non-zero if the environment is not WSL2. It prints `df` for `$H
 Run once on a fresh Ubuntu WSL instance:
 
 ```bash
-cd /mnt/c/Users/<you>/Desktop/Proyects/realme-gt2-second-life
+cd "/mnt/c/Users/<user>/path/to/realme-gt2-second-life"   # o export REPO_ROOT=…
 bash scripts/wsl/setup-build-env.sh --help
 bash scripts/wsl/setup-build-env.sh --dry-run   # preview only
 bash scripts/wsl/setup-build-env.sh             # installs via apt (interactive sudo)

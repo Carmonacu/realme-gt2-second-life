@@ -8,7 +8,8 @@ Captured via `check-adb-device.ps1` on **2026-10-30**. Update after ROM flashes 
 | `ro.product.device` | RE58B2L1 (Realme prop; port codename remains **porsche**) |
 | Build (`ro.build.display.id`) | **RMX3311_15.0.0.1650(EX01)** |
 | Firmware suffix | **EX01** (ColorOS 15 export/EU channel — not the older `EUEX` string) |
-| adb serial | `YOUR_ADB_SERIAL` |
+| adb serial | `YOUR_ADB_SERIAL` (opcional; define `$env:GT2_ADB_SERIAL` o `ANDROID_SERIAL` en scripts) |
+| Tailscale (ejemplo) | `100.x.y.z` (`<TAILSCALE_IP>`) / hostname MagicDNS de tu tailnet |
 | Battery (last check) | 100% |
 
 ## OTA you need

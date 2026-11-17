@@ -1,5 +1,7 @@
 # Re-habilita paquetes desactivados por el afinado LLM (2026-10-31).
-param([string]$Serial = $env:GT2_ADB_SERIAL)
+param([string]$Serial = '')
+. (Join-Path $PSScriptRoot '..\windows\adb-serial.ps1')
+$Serial = Resolve-Gt2AdbSerial -Serial $Serial
 
 $packages = @(
   "com.heytap.pictorial",
@@ -24,6 +26,6 @@ $packages = @(
 
 foreach ($pkg in $packages) {
   Write-Host "enable $pkg"
-  adb -s $Serial shell "pm enable $pkg" 2>&1 | Out-Null
+  Invoke-Gt2Adb -Serial $Serial shell "pm enable $pkg" 2>&1 | Out-Null
 }
 Write-Host "Listo. Reinicia apps deseadas desde el launcher."

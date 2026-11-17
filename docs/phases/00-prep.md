@@ -31,7 +31,7 @@ See [STATUS.md](../STATUS.md) for what is already done vs blocked.
 
 ```bash
 # WSL — toolchain installed (root apt, 2026-10-31)
-bash /mnt/c/Users/<you>/Desktop/Proyects/realme-gt2-second-life/scripts/wsl/verify-wsl.sh --require-toolchain
+bash "$REPO_ROOT/scripts/wsl/verify-wsl.sh" --require-toolchain
 ```
 
 Gate to Phase 1: [PHASE-GATES.md](../PHASE-GATES.md).

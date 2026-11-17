@@ -1,11 +1,13 @@
 # Safe on-device LLM benchmarks (detached on phone, per-run logs on PC)
 param(
-    [string]$Serial = $env:GT2_ADB_SERIAL,
+    [string]$Serial = '',
     [switch]$SkipSmallModels,
     [switch]$SkipSustained
 )
 
 $ErrorActionPreference = 'Continue'
+. (Join-Path $PSScriptRoot '..\windows\adb-serial.ps1')
+$Serial = Resolve-Gt2AdbSerial -Serial $Serial
 $Repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $RunsDir = Join-Path $Repo 'docs\benchmarks\runs'
 $BenchDir = Join-Path $Repo 'scripts\bench'
@@ -18,7 +20,7 @@ $DS15 = '/data/local/tmp/models/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf'
 $Smol = '/data/local/tmp/models/HuggingFaceTB_SmolLM3-3B-Q4_K_M.gguf'
 
 function Get-AdbShell([string]$Cmd) {
-    $out = & adb -s $Serial shell $Cmd 2>&1
+    $out = Invoke-Gt2Adb -Serial $Serial shell $Cmd 2>&1
     if ($null -eq $out) { return '' }
     if ($out -is [System.Array]) { return ($out | ForEach-Object { "$_" }) -join "`n" }
     return "$out"
@@ -26,7 +28,11 @@ function Get-AdbShell([string]$Cmd) {
 
 function Invoke-Adb {
     param([string[]]$AdbArgs)
-    $out = & adb @AdbArgs 2>&1
+    $out = if ($AdbArgs.Count -ge 2 -and $AdbArgs[0] -eq '-s') {
+        Invoke-Gt2Adb -Serial $AdbArgs[1] @($AdbArgs[2..($AdbArgs.Length - 1)]) 2>&1
+    } else {
+        Invoke-Gt2Adb -Serial $Serial @AdbArgs 2>&1
+    }
     if ($null -eq $out) { return '' }
     if ($out -is [System.Array]) { return ($out | ForEach-Object { "$_" }) -join "`n" }
     return "$out"
@@ -51,9 +57,10 @@ function Get-MemAvailableKb {
 }
 
 function Test-Preflight {
-    $dev = Invoke-Adb @('-s', $Serial, 'get-state')
+    $dev = Invoke-Gt2Adb -Serial $Serial get-state
     if ($dev -notmatch 'device') {
-        throw "ADB device $Serial not ready: $dev"
+        $hint = if ($Serial) { $Serial } else { '(default adb device)' }
+        throw "ADB device $hint not ready: $dev"
     }
     $lvl = Get-BatteryLevel
     if ($lvl -lt 30) {
