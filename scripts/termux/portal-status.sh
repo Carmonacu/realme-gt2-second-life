@@ -151,6 +151,7 @@ plug_json="null"
 
 ts_ip_json="null"
 [[ -n "$tailscale_ip" ]] && ts_ip_json="\"$(json_escape "$tailscale_ip")\""
+ts_host_hint="${TAILSCALE_HOST_HINT:-example-phone}"
 
 updated="$(date -Iseconds 2>/dev/null || date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
@@ -164,7 +165,7 @@ cat >"$tmp" <<EOF
   "mem_available_kb": ${mem_kb},
   "mem_available_gib": ${mem_gib_num},
   "tailscale_ip": ${ts_ip_json},
-  "tailscale_host_hint": "realme-gt-2",
+  "tailscale_host_hint": "$(json_escape "$ts_host_hint")",
   "portal_port": ${PORTAL_PORT:-8081},
   "heavy_processes": ${heavy_json},
   "power": { "battery": ${battery_json}, "charge_limiter": ${charge_json}, "plug_state": ${plug_json}, "thermal": ${thermal_json} },

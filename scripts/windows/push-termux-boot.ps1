@@ -6,21 +6,11 @@
   Destino: /sdcard/Download/llm-setup/ (mismo patrón que bootstrap.sh).
   Luego en Termux: bash ~/storage/shared/Download/llm-setup/install-boot-services.sh
 #>
-param(
-  [string]$Serial = $env:GT2_ADB_SERIAL
-)
+param([string]$Serial = '')
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-
-$repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$termuxDir = Join-Path $repoRoot 'scripts\termux'
-if (-not (Test-Path $termuxDir)) {
-  Write-Error "No se encuentra $termuxDir"
-}
-
-Write-Host "==> adb push scripts/termux → /sdcard/Download/llm-setup/ (serial $Serial)" -ForegroundColor Cyan
-& adb -s $Serial push (Join-Path $termuxDir '.') /sdcard/Download/llm-setup/
+& (Join-Path $PSScriptRoot 'push-termux-scripts.ps1') @PSBoundParameters
 
 Write-Host ""
 Write-Host "En el teléfono (Termux):" -ForegroundColor Green

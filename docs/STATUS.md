@@ -87,7 +87,7 @@ Phase 5 **scripts and docs** are scaffolding. Kernel builds need **Phase 4** ROM
 **WSL (toolchain already installed):**
 
 ```bash
-bash /mnt/c/Users/<you>/Desktop/Proyects/realme-gt2-second-life/scripts/wsl/verify-wsl.sh --require-toolchain
+bash "$REPO_ROOT/scripts/wsl/verify-wsl.sh" --require-toolchain   # REPO_ROOT = ruta del clon en WSL
 ```
 
 Note: `--require-toolchain` may exit early on `lld --version` (non-zero on Ubuntu); tools `ld.lld`, gcc, clang, make, repo are installed — confirm with `command -v gcc clang make repo ld.lld`.

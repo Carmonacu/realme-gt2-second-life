@@ -286,7 +286,7 @@ Informe completo: [`phone-tuning.md`](phone-tuning.md).
 ### Acceso remoto con Tailscale
 
 1. **Instala / abre Tailscale** en el teléfono (APK oficial en `downloads/apps/` o Play Store). Inicia sesión, acepta **VPN** y excluye Tailscale de optimización de batería.
-2. **Verificado (RMX3311):** IP tailnet **`100.x.y.z`**, hostname **`realme-gt-2`**, interfaz **`tun1`** (también visible en Termux).
+2. **Verificado (RMX3311):** IP tailnet **`100.x.y.z`** (`<TAILSCALE_IP>`), hostname de ejemplo **`example-phone`**, interfaz **`tun1`** (también visible en Termux).
 3. Actualiza scripts (`adb push` → copiar a `~/bin/`; ver [`scripts/termux/README.md`](../scripts/termux/README.md)) y arranca:
    ```bash
    llm smol --remote
@@ -294,7 +294,7 @@ Informe completo: [`phone-tuning.md`](phone-tuning.md).
    - Escucha en la **IP Tailscale** (`100.x`), **no** en `0.0.0.0` (evita exponer **8080** en la Wi‑Fi LAN).
    - Primera vez: crea **`~/.llm-api-key`** (`chmod 600`). Léela **solo en el teléfono**: `cat ~/.llm-api-key`.
    - Si `openssl` no está operativo en Termux, la clave se genera con **Python** (`secrets.token_hex`).
-4. Desde otro dispositivo en la tailnet (p. ej. PC **omen**):
+4. Desde otro dispositivo en la tailnet (p. ej. tu PC):
    - **UI:** `http://100.x.y.z:8080`
    - **API:** `http://100.x.y.z:8080/v1` + cabecera `Authorization: Bearer <clave>`
    - Sin clave → **401**; con clave → **200** (comprobado 2026-10-31).
