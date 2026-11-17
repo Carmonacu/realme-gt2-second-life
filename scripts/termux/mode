@@ -34,7 +34,7 @@ Comandos:
   apply <modo>        Igual que el subcomando (p. ej. boot)
 
 Variables:
-  TERMUX_DEFAULT_MODE   idle | llm (boot; ver install-boot-services.sh)
+  TERMUX_DEFAULT_MODE   modo si no hay ~/.termux-mode (defecto boot: media)
   MODE_IGNORE_THERMAL=1 mode llm aunque thermal-guard esté en hot/critical
 
 Ejemplos:

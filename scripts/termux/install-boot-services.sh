@@ -207,7 +207,8 @@ install_power_svc() {
 
 echo "==> Energía: charge-limiter / thermal-guard (runit)"
 install_power_svc charge-limiter "$ENABLE_CHARGE"
-install_power_svc thermal-guard "$ENABLE_THERMAL"
+# thermal-guard sin «down»: runsvdir lo arranca al boot (charge-limiter sigue opt-in)
+install_power_svc thermal-guard 1
 if [[ "$ENABLE_CHARGE" == "1" ]]; then
   for dep in mosquitto node-red; do
     if [[ -d "${SVDIR}/${dep}" ]]; then
@@ -252,7 +253,7 @@ echo ""
 echo "Listo."
 echo "  Termux:Boot: instala/abre la app F-Droid y reinicia el teléfono para probar."
 echo "  Tras reboot: adb forward tcp:8022 tcp:8022 && ssh … 'pgrep -x sshd && sv status sshd'"
-echo "  Modo boot: TERMUX_DEFAULT_MODE=idle (LLM manual: mode llm). Ver docs/service-modes-design.md"
+echo "  Modo boot: restaura ~/.termux-mode (fallback TERMUX_DEFAULT_MODE=media). Ver docs/service-modes-design.md"
 echo "  Opcional: bash ~/storage/shared/Download/llm-setup/install-optional-services.sh"
 echo "  Portal:   bash ~/storage/shared/Download/llm-setup/install-portal.sh"
 echo "  Guía: docs/termux-boot-services.md (repo PC)"

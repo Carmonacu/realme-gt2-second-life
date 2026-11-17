@@ -117,9 +117,34 @@ mode_read_state() {
   fi
 }
 
+# Último modo aplicado con éxito (boot lee este fichero; no se escribe si mode_apply falla).
 mode_write_state() {
   local m="$1"
+  mode_valid_name "$m" || return 1
   printf '%s\n' "$m" >"$MODE_STATE_FILE"
+}
+
+# Objetivo tras reboot: último modo guardado, o TERMUX_DEFAULT_MODE (defecto media).
+mode_boot_target() {
+  local saved fallback
+  fallback="${TERMUX_DEFAULT_MODE:-media}"
+  saved="$(mode_read_state)"
+  if mode_valid_name "$saved" && [[ "$saved" != "unknown" ]]; then
+    echo "$saved"
+    return 0
+  fi
+  if mode_valid_name "$fallback"; then
+    echo "$fallback"
+  else
+    echo "media"
+  fi
+}
+
+mode_boot_log() {
+  local msg="$1"
+  mkdir -p "$(dirname "$MODE_LOG_FILE")" 2>/dev/null || true
+  printf '%s boot %s\n' "$(date -Iseconds 2>/dev/null || date)" "$msg" \
+    >>"$MODE_LOG_FILE" 2>/dev/null || true
 }
 
 mode_log_transition() {
