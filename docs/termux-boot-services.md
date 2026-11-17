@@ -14,7 +14,8 @@
 | **runit** (`termux-services`) | **Sí** | `source $PREFIX/etc/profile.d/start-services.sh` |
 | **`sshd` (8022)** | **Sí** | `sv-enable sshd` (instalador) |
 | **`llama-smol` (8080)** | **No** | Solo con `install-boot-services.sh --enable-llama-smol` o `sv-enable llama-smol` |
-| **Perfil `mode`** | **`idle`** | Tras runit, `start-services` ejecuta `mode apply ${TERMUX_DEFAULT_MODE:-idle}` |
+| **Perfil `mode`** | **Último guardado** (`~/.termux-mode`) | Tras sshd + breve espera de red, `start-services` ejecuta `mode apply` (fallback `TERMUX_DEFAULT_MODE`, defecto **`media`**) |
+| **`thermal-guard`** | **Sí** (sin fichero `down`) | runsvdir + `sv up` en boot si el servicio existe; **charge-limiter** sigue opt-in |
 | **Tailscale** | **No** | App Android (VPN); arranca si el sistema la relanza — no sustituido por este doc |
 
 El auto-arranque antiguo en `~/.bashrc` (`ssh-setup.sh`) sigue siendo un **respaldo** al abrir Termux; con Termux:Boot + runit no dependes de una sesión interactiva.
@@ -59,7 +60,7 @@ El instalador:
 - `pkg install termux-services openssh`
 - **Arranca runsvdir:** `. $PREFIX/etc/profile.d/start-services.sh` (breve espera) — necesario antes de `sv-enable` en instalaciones nuevas
 - `sv-enable sshd`
-- Copia [`boot/start-services`](../scripts/termux/boot/start-services) → `~/.termux/boot/start-services` (incluye `mode apply idle` si existe `~/bin/mode`)
+- Copia [`boot/start-services`](../scripts/termux/boot/start-services) → `~/.termux/boot/start-services` (restaura el último `mode` desde `~/.termux-mode`, `PATH` con `~/bin`, log en `~/storage/shared/mode-transitions.log`)
 - Copia `mode` + `mode-lib.sh` → `~/bin/` si están en `llm-setup/`
 - Instala definición runit [`services/llama-smol/run`](../scripts/termux/services/llama-smol/run) pero la deja **deshabilitada** salvo `--enable-llama-smol`
 

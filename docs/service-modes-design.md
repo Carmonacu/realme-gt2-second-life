@@ -30,7 +30,7 @@ Tras auditoría dispositivo 2026-10-31 ([STATUS.md](STATUS.md) § Plan B on devi
 
 - **Idea 1** embebida como tabla de modos (`llm`, `pentest`, `media`, `light-stack`, `idle`, `lab`).
 - **Idea 3** (`termux-services` / `sv`) para **ligeros** (sshd, mosquitto, jellyfin cuando exista) — no `llama-server` always-on.
-- **Idea 5** en boot: `~/.termux/boot/` → `mode apply "${TERMUX_DEFAULT_MODE:-idle}"` (requiere [termux-boot-services.md](termux-boot-services.md) desplegado).
+- **Idea 5** en boot: `~/.termux/boot/start-services` → tras runit/sshd, `mode apply` con el último modo en **`~/.termux-mode`** (solo se escribe si la transición termina bien); fallback **`TERMUX_DEFAULT_MODE`** (defecto **`media`**). Requiere [termux-boot-services.md](termux-boot-services.md) desplegado.
 - **Idea 4** (cola + log) solo si más adelante hace falta automatizar transiciones largas.
 
 **Stack opcional del usuario:** Jellyfin (`mode media`), Node-RED+Mosquitto (`light-stack`), lab **udocker** antes que QEMU+Docker (`lab`, LLM off). Ver [STATUS.md](STATUS.md) — ninguno instalado aún en el teléfono.
@@ -94,7 +94,7 @@ Encaja con la regla del repo: **`kali --force` solo con LLM parado** en flujos a
 
 ### 5. Perfil remoto + Termux:Boot + Tailscale
 
-- **Boot:** `~/.termux/boot/00-mode.sh` → `source ~/bin/mode-lib.sh && mode_apply "${TERMUX_DEFAULT_MODE:-llm}"`.
+- **Boot:** `start-services` → `mode apply "$(mode_boot_target)"` (estado en `~/.termux-mode`).
 - **Remoto (SSH):** documentar `ssh phone mode pentest` igual que local.
 - **Tailscale:** no sustituye el control de modos; solo transporte. Servicios escuchan en `127.0.0.1` o en la IP tailnet según guía LLM; Jellyfin requeriría decisión explícita de bind (seguridad).
 - **Notificación Termux:** opcional `termux-notification` con modo actual tras cada transición (útil en pantalla del teléfono).
@@ -134,7 +134,7 @@ Backlog completo (autónomas vs NAS/sync): **[second-life-ecosystem.md §4](seco
 1. ~~Extraer guardias de `kali-common.sh` a `mode-lib.sh` compartido.~~ **Hecho (v1).**
 2. ~~Definir tabla de procesos «heavy»~~ **Hecho en `mode-lib.sh`.**
 3. Añadir tests en dry-run: `mode status` desde `phone-check-remote.sh` — **parcial (v1).**
-4. Enlazado desde [second-life-ecosystem.md](second-life-ecosystem.md) y [phone-tuning.md § E](phone-tuning.md#e-mantener-el-rol-principal-política-operativa). Arranque tras reboot: [termux-boot-services.md](termux-boot-services.md) (`install-boot-services.sh` + `mode apply idle`).
+4. Enlazado desde [second-life-ecosystem.md](second-life-ecosystem.md) y [phone-tuning.md § E](phone-tuning.md#e-mantener-el-rol-principal-política-operativa). Arranque tras reboot: [termux-boot-services.md](termux-boot-services.md) (restauración de modo + `thermal-guard`).
 5. ~~**Modo `gaming`:** guía mínima + hook en `mode` (OpenJDK + Paper, Geyser opcional)~~ **Hecho 2026-11-03** ([minecraft-java.md](minecraft-java.md)); pendiente: benchmark con 2+ jugadores reales en tailnet.
 
 ---
@@ -147,9 +147,10 @@ Backlog completo (autónomas vs NAS/sync): **[second-life-ecosystem.md §4](seco
 | Librería | [`scripts/termux/mode-lib.sh`](../scripts/termux/mode-lib.sh) |
 | Servicios runit | [`scripts/termux/services/`](../scripts/termux/services/) (`jellyfin` vía pkg, `mosquitto`, `node-red`) |
 | Instalador opcional | [`install-optional-services.sh`](../scripts/termux/install-optional-services.sh) |
-| Boot | `start-services` llama `mode apply ${TERMUX_DEFAULT_MODE:-idle}` |
+| Boot | `start-services` restaura `~/.termux-mode` vía `mode_boot_target` |
+| Estado persistente | `~/.termux-mode` (último modo aplicado con éxito) |
 
-**Boot:** por defecto **`idle`** (solo sshd + runit). Para LLM tras reinicio: `mode llm` manual, o `export TERMUX_DEFAULT_MODE=llm` antes del boot (no recomendado con Kali/media).
+**Boot:** tras reinicio se reaplica el **último modo** (p. ej. `media` → Jellyfin de nuevo). Si no hay estado válido, **`media`** salvo `TERMUX_DEFAULT_MODE`. El log incluye líneas `boot …` en `~/storage/shared/mode-transitions.log`.
 
 **Log de transiciones:** `~/storage/shared/mode-transitions.log`
 

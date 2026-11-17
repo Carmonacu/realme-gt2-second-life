@@ -1,9 +1,54 @@
-#!/data/data/com.termux/files/usr/bin/sh
+#!/data/data/com.termux/files/usr/bin/bash
 # Copiar a ~/.termux/boot/start-services (install-boot-services.sh).
 # Requiere Termux:Boot (F-Droid) abierto al menos una vez.
 termux-wake-lock
-. "${PREFIX:-/data/data/com.termux/files/usr}/etc/profile.d/start-services.sh"
-# Modo por defecto tras runit: idle (LLM manual con «mode llm»). Ver docs/service-modes-design.md
-if [ -x "${HOME}/bin/mode" ]; then
-  bash "${HOME}/bin/mode" apply "${TERMUX_DEFAULT_MODE:-idle}" 2>/dev/null || true
+export PATH="${HOME}/bin:${PREFIX:-/data/data/com.termux/files/usr}/bin:${PATH}"
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+SVDIR="${PREFIX}/var/service"
+
+. "${PREFIX}/etc/profile.d/start-services.sh"
+
+boot_log() {
+  local log="${HOME}/storage/shared/mode-transitions.log"
+  mkdir -p "$(dirname "$log")" 2>/dev/null || true
+  printf '%s boot %s\n' "$(date -Iseconds 2>/dev/null || date)" "$*" >>"$log" 2>/dev/null || true
+}
+
+# sshd antes de mode (servicios y SSH para comprobaciones remotas)
+i=0
+while [[ "$i" -lt 30 ]]; do
+  pgrep -x sshd >/dev/null 2>&1 && break
+  i=$((i + 1))
+  sleep 2
+done
+if pgrep -x sshd >/dev/null 2>&1; then
+  boot_log "sshd up"
+else
+  boot_log "sshd not ready after wait"
+fi
+
+# Breve espera red / VPN (p. ej. Tailscale en segundo plano)
+sleep 15
+
+if [[ -d "${SVDIR}/thermal-guard" && ! -f "${SVDIR}/thermal-guard/down" ]]; then
+  if command -v sv >/dev/null 2>&1; then
+    sv up thermal-guard 2>/dev/null || boot_log "thermal-guard sv up failed"
+  fi
+fi
+
+if [[ -x "${HOME}/bin/mode" ]]; then
+  target="${TERMUX_DEFAULT_MODE:-media}"
+  if [[ -f "${HOME}/bin/mode-lib.sh" ]]; then
+  # shellcheck source=/dev/null
+    . "${HOME}/bin/mode-lib.sh"
+    target="$(mode_boot_target)"
+    mode_boot_log "restore target=${target} (state=$(mode_read_state))"
+  else
+    boot_log "mode-lib missing; fallback target=${target}"
+  fi
+  if bash "${HOME}/bin/mode" apply "$target"; then
+    boot_log "mode apply ${target} ok"
+  else
+    boot_log "mode apply ${target} failed (rc=$?)"
+  fi
 fi
