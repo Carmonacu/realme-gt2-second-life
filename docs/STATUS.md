@@ -17,7 +17,7 @@ SSH read-only audit via ADB + forward **8022**. Repo docs vs **this phone**:
 | **Minecraft Java (Paper) — `mode gaming`** | [minecraft-java.md](minecraft-java.md) · `scripts/termux/mc-server` | **Probado en teléfono 2026-11-03:** Paper 26.3 build 238 + OpenJDK 25; Done en 11,7–15,7 s, **20 TPS** vacío, RSS ~1,5 GB (heap 2560M); `mode gaming` ↔ `mode media` con parada limpia; puerto 25565 accesible por Tailscale (`100.x.y.z:25565`, ver `tailscale ip -4` en el teléfono). Pendiente: prueba con jugadores reales |
 | **charge-limiter + thermal-guard** (opt-in) | [always-on-battery.md § 9](always-on-battery.md#9-limitador-de-carga-y-guardián-térmico-opt-in) | **Solo repo** — falta Termux:API en el teléfono, importar flujo Node-RED y elegir enchufe |
 
-**Next on device (order):** **Tailscale (app Android):** tras reboot abrir la app o activar VPN always-on (no usar solo `tailscaled` de Termux). **Jellyfin:** completar asistente en `http://<tailscale-ip>:8096/web/` y añadir biblioteca `…/storage/shared/Movies` ([jellyfin-media.md](jellyfin-media.md)). Reinstalar runit Jellyfin: `bash install-optional-services.sh` o copiar `services/jellyfin/run`.
+**Next on device (order):** **Tailscale (app Android):** tras reboot abrir la app o activar VPN always-on (no usar solo `tailscaled` de Termux). **Jellyfin:** completar asistente en `http://<tailscale-ip>:8096/web/` y añadir biblioteca `…/storage/shared/Movies` ([jellyfin-media.md](jellyfin-media.md)). Reinstalar runit Jellyfin: `bash install-optional-services.sh` o copiar `services/jellyfin/run`. **Modelos:** ejecutar [model-update-plan.md](model-update-plan.md) — build b12549 + bench LFM3/LFM2.5 (control Qwen3-1.7B) + juez ciego glm-5.3; regla acordada: mejor rendimiento **y** calidad → cambia el preset por defecto ([CAR-117](https://linear.app/carmonacu/issue/CAR-117/realme-gt2-re-revision-del-unlock-eu-ronda-3-y-plan-de-actualizacion)).
 
 ## BLOCKED: bootloader unlock (Phase 2) — 2026-10-31
 
@@ -25,6 +25,7 @@ SSH read-only audit via ADB + forward **8022**. Repo docs vs **this phone**:
 - Deep Testing **v1.0.1**: blank disclaimer, then *"Failed to submit application. This phone model does not support deep testing."* No prior requests; HeyTap region believed EU.
 - Research ([unlock-research.md](unlock-research.md)): **0 verified unlocks** of RMX3311 EU on Android 14/15 stock. Rollback + CN/IN region path conflicts with the project rule (no CN/IN) and risks IMEI/brick; exact 1650 Full OTA is not downloadable (CDN 404).
 - **Decision:** pause Phase 2+ on this phone (PLAN stop condition). Phone stays on stock. Resume only with new primary evidence, or switch device. Do not attempt rollback without explicit written acceptance of the risk.
+- **Round 3 (2026-11-19):** re-review web — **sin delta** que desbloquee; nuevo *watch item*: APK **debuggable de Deep Testing 1.1.0** (GT5, sin verificar para porsche) — detalle y caveats en [unlock-research.md § Round 3](unlock-research.md). Sigue pausado; triggers de re-arme ahí.
 - Open PC items: Windows driver for bootloader-mode fastboot (`SM8350-MTP`, `VID_22D9&PID_2769` → Android Bootloader Interface).
 
 ## Plan B (rootless, stock phone)
