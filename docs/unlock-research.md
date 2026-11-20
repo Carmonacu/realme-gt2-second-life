@@ -290,3 +290,35 @@ Not GT2-specific, but **only fetched Realme Europe statement** on bootloader pro
 ---
 
 *Internal repo cross-ref: `docs/device-record.md`, `docs/PLAN.md` Phase 2 stop condition.*
+
+---
+
+## Round 3 — re-review 2026-11-19 (web only, no device changes)
+
+**Question:** did anything change since Round 2 (2026-10-31) that unblocks Phase 2 on RMX3311 EU A15?
+
+**Answer: No — Phase 2 stays paused.** Delta found: zero verified unlocks, zero new tooling, **one new lead** (classified below, not an approved path).
+
+| Check (2026-11-19) | Result |
+|--------------------|--------|
+| New verified RMX3311 EU unlocks on A14/A15 | **0**. Searches only resurface the 2023 `deeptesting-junk.pl` era; in-thread detail confirms it died at the **May 2023 server "upgrade"** (Lightning-: DT approval still arrives, but "Start deep testing" reboots without ever exposing fastboot — same class of failure as S1's Oct 2024 test) |
+| New unlock tooling on GitHub | **0 repos** (API search `RMX3311 unlock`, sorted by update) |
+| Stano36 path / new Deep Testing APK | No RMX3311 A15 success captured since Round 2. Stano36's own note stands: **"Unlocking only works on Android version 14"** (S18) |
+| zenfyr wall-of-shame (fetched fresh) | Policy taxonomy unchanged: Realme unlock confirmed **CN + IN**; "some models from other regions reportedly supported" (never GT2 EU); server exploit **obsolete** since May 2023; DT versions v1.0.0 (RUI ≤2) / v1.0.1–v1.1.0 (RUI 3+) |
+
+### New lead (watch item — NOT an approved path): debuggable Deep Testing 1.1.0 APK
+
+The wall-of-shame documents that a **debuggable build of Deep Testing v1.1.0 was accidentally released** ([GT5-DeepTesting.apk](https://xdaforums.com/attachments/gt5-deeptesting-apk.6065115/), surfaced by gargargar666 in [the Oppo fastboot thread](https://xdaforums.com/t/discussion-a-thread-to-collate-and-share-what-is-known-about-unlocking-fastboot-on-oppo-devices.4490041/post-89323153)): with Android Studio you can **execute code with UID 1000** (not root) inside Deep Testing. Since DT internally **writes the unlock key to the `oplus/oppo reserve1` partition** (per zenfyr's reverse-engineering note), locally executed code could in theory write a key without hitting the server-side "model not supported" rejection.
+
+Caveats — why this stays a watch item:
+
+1. Verified only for a **GT5** artifact; DT apps are near-identical across models but **not proven for porsche**.
+2. UID 1000 ≠ root; unknown whether `reserve1` is writable at that level on the GT2.
+3. **Unknown whether fastboot validates the stored key cryptographically** or cross-checks a server signature — if it does, a locally-written key is worthless.
+4. Project rule §7.4 applies: no random tools without an **RMX3311 EU primary write-up**.
+
+### Conclusion
+
+Decision matrix (§7) unchanged. Re-arm triggers for the next review: (1) an RMX3311 **EU-specific** unlock success on Android 15, (2) a verified **Full OTA 1650** mirror (still dead per `device-record.md`), (3) a credible write-up of the **debuggable-DT** path for porsche.
+
+Sources (round 3): zenfyrdev wall-of-shame `brands/oppo/README.md` (raw fetch 2026-11-19, incl. debuggable-DT note); GitHub API `RMX3311 unlock` repo search (0 hits); XDA 4585749 thread re-read (2023 failure detail); exa searches for RMX3311/GT2 EU unlock Nov 2026 (no new primary posts).
